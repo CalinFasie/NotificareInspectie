@@ -263,6 +263,12 @@ def get_notification_vehicles(today):
                     SELECT MAX(i.InspectionDate)
                     FROM dbo.INSPECTIONS i
                     WHERE i.VehicleID = v.VehicleID
+                ) AS LastInspectionDate,
+
+                (
+                    SELECT MAX(i.InspectionDate)
+                    FROM dbo.INSPECTIONS i
+                    WHERE i.VehicleID = v.VehicleID
                       AND i.InspectionDate < ?
                 ) AS LastInspectionBeforeToday
 
@@ -278,7 +284,6 @@ def get_notification_vehicles(today):
         """, today)
 
         return cursor.fetchall()
-
 
 def get_config_users():
     with get_connection() as conn:
