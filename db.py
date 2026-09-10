@@ -251,6 +251,10 @@ def get_notification_vehicles(today):
                 v.CRP,
                 v.AdvisorUsername,
 
+                v.LastCrpNotificationDate,
+                v.LastDay27NotificationDate,
+                v.LastOverdueNotificationDate,
+
                 s.FullName AS SellerName,
                 s.Email AS SellerEmail,
                 s.ManagerEmail AS SellerManagerEmail,
@@ -373,3 +377,30 @@ def get_advisor_manager():
         """)
 
         return cursor.fetchone()
+
+def mark_notification_sent(vehicle_id, notification_type, sent_date):
+    columns = {
+        "CRP": "LastCrpNotificationDate",
+        "DAY27": "LastDay27NotificationDate",
+        "OVERDUE": "LastOverdueNotificationDate",
+    }
+
+    column = columns.get(notification_type)
+
+    if column is None:
+        raise ValueError("Tip notificare invalid.")
+
+    with get_connection() as conn:
+        cursor = conn.cursor()
+
+        cursor.execute(
+            f"""
+            UPDATE dbo.VEHICLES
+            SET {column} = ?
+            WHERE VehicleID = ?
+            """,
+            sent_date,
+            vehicle_id,
+        )
+
+        conn.commit()

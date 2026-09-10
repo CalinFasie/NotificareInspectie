@@ -1,7 +1,6 @@
 import smtplib
-from datetime import datetime, timedelta
+from datetime import timedelta
 from email.mime.text import MIMEText
-from zoneinfo import ZoneInfo
 
 import db
 from config import (
@@ -9,10 +8,8 @@ from config import (
     SMTP_PASSWORD,
     SMTP_PORT,
     SMTP_USER,
+    app_today,
 )
-
-LOCAL_TIMEZONE = ZoneInfo("Europe/Bucharest")
-
 
 def clean_recipients(recipients):
     result = []
@@ -195,7 +192,7 @@ def send_email(recipients, subject, body):
 
 
 def run_notifications():
-    today = datetime.now(LOCAL_TIMEZONE).date()
+    today = app_today()
 
     vehicles = db.get_notification_vehicles(today)
     active_advisors = db.get_active_advisors()
@@ -204,7 +201,10 @@ def run_notifications():
 
     for vehicle in vehicles:
 
-        if check_missing_crp(vehicle, today):
+        if (
+            check_missing_crp(vehicle, today)
+            and vehicle.LastCrpNotificationDate != today
+        ):
             recipients = get_crp_recipients(
                 vehicle,
                 advisor_manager,
@@ -218,12 +218,25 @@ def run_notifications():
                 body,
             )
 
+            db.mark_notification_sent(
+                vehicle.VehicleID,
+                "CRP",
+                today,
+            )
+
         _data_start, cycle_day, due_date = get_inspection_cycle(
             vehicle,
             today,
         )
 
-        if cycle_day == 27:
+        inspection_done_today = (
+            vehicle.LastInspectionDate == today
+        )
+
+        if (
+            cycle_day == 27
+            and vehicle.LastDay27NotificationDate != today
+        ):
             recipients = get_day27_recipients(
                 vehicle,
                 advisor_manager,
@@ -235,13 +248,18 @@ def run_notifications():
                 due_date,
             )
 
-            send_email(
-                recipients,
-                subject,
-                body,
+            send_email(recipients, subject, body)
+
+            db.mark_notification_sent(
+                vehicle.VehicleID,
+                "DAY27",
+                today,
             )
 
-        elif cycle_day >= 30:
+        elif (
+            (cycle_day == 30 or (cycle_day > 30 and not inspection_done_today))
+            and vehicle.LastOverdueNotificationDate != today
+        ):
             recipients = get_day30_recipients(
                 vehicle,
                 advisor_manager,
@@ -255,8 +273,10 @@ def run_notifications():
                 cycle_day,
             )
 
-            send_email(
-                recipients,
-                subject,
-                body,
+            send_email(recipients, subject, body)
+
+            db.mark_notification_sent(
+                vehicle.VehicleID,
+                "OVERDUE",
+                today,
             )
