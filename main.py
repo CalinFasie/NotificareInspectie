@@ -157,6 +157,11 @@ def get_crp_display(vehicle):
 
 class VehicleCheckApp:
 
+    def require_permission(self, permission):
+        self.user = load_current_user()
+        if not permission(self.user):
+            raise PermissionError("Nu mai ai dreptul să efectuezi această operație.")
+
     def __init__(self, root, user):
         self.root = root
         self.user = user
@@ -497,6 +502,7 @@ class VehicleCheckApp:
         def save():
             try:
                 vin = vin_entry.get().strip().upper()
+                self.require_permission(can_add_vehicle)
                 model = model_entry.get().strip()
 
                 if len(vin) != 17:
@@ -582,10 +588,7 @@ class VehicleCheckApp:
         advisor_map = {}
         advisor_combo = None
 
-        if self.user.Role == "ADVISOR":
-            advisor_username = self.user.Username
-
-        else:
+        if self.user.Role != "ADVISOR":
             advisors = db.get_active_advisors()
 
             for advisor in advisors:
@@ -620,6 +623,7 @@ class VehicleCheckApp:
         def save():
             try:
                 crp = crp_entry.get().strip()
+                self.require_permission(can_enter_crp)
 
                 if not crp:
                     raise ValueError(
@@ -627,8 +631,10 @@ class VehicleCheckApp:
                     )
 
                 if self.user.Role == "ADVISOR":
-                    selected_advisor = advisor_username
+                    selected_advisor = self.user.Username
                 else:
+                    if advisor_combo is None:
+                        raise ValueError("Rolul s-a schimbat. Redeschide formularul CRP pentru a selecta Advisor.")
                     advisor_name = advisor_combo.get()
 
                     if not advisor_name:
@@ -711,6 +717,7 @@ class VehicleCheckApp:
 
         def save():
             try:
+                self.require_permission(can_add_inspection)
                 if self.user.Role == "ADVISOR":
                     inspection_date = app_today()
                 else:
@@ -789,6 +796,7 @@ class VehicleCheckApp:
 
         def save():
             try:
+                self.require_permission(can_invoice)
                 invoice_date = parse_date(
                     date_entry.get()
                 )
@@ -942,6 +950,7 @@ class VehicleCheckApp:
 
             def save_edit():
                 try:
+                    self.require_permission(can_edit_inspection)
                     new_date = parse_date(
                         entry.get()
                     )
@@ -988,8 +997,10 @@ class VehicleCheckApp:
             ).pack(pady=5)
 
     def config_dialog(self):
-        if not can_manage_config(self.user):
-            messagebox.showerror("Acces refuzat", "Configurarea necesită rolul ADMIN.")
+        try:
+            self.require_permission(can_manage_config)
+        except Exception as exc:
+            messagebox.showerror("Acces refuzat", str(exc))
             return
 
         window = tk.Toplevel(self.root)
@@ -1005,6 +1016,7 @@ class VehicleCheckApp:
         values = {field: tk.StringVar() for field in fields}
         selected = {"id": None}
         users = {}
+        entries = {}
         for row, field in enumerate(fields, start=1):
             ttk.Label(window, text=field).grid(row=row, column=0, sticky="e")
             if field == "Role":
@@ -1013,6 +1025,7 @@ class VehicleCheckApp:
             else:
                 entry = ttk.Entry(window, textvariable=values[field], width=40)
             entry.grid(row=row, column=1, padx=8, pady=4, sticky="w")
+            entries[field] = entry
 
         def refresh():
             rows = db.get_config_users()
@@ -1032,15 +1045,18 @@ class VehicleCheckApp:
                 selected["id"] = user.ConfigID
                 for field in fields:
                     values[field].set(getattr(user, field) or "")
+                entries["Username"].configure(state="readonly")
 
         def new():
             selected["id"] = None
+            entries["Username"].configure(state="normal")
             tree.selection_remove(*tree.selection())
             for value in values.values():
                 value.set("")
 
         def save():
             try:
+                self.require_permission(can_manage_config)
                 data = [values[field].get().strip() for field in fields]
                 if not all(data[:4]) or data[2] not in roles:
                     raise ValueError("Completează Username, FullName, Role și Email.")
@@ -1068,6 +1084,7 @@ class VehicleCheckApp:
             if selected["id"] is None:
                 return
             try:
+                self.require_permission(can_manage_config)
                 current = users[str(selected["id"])]
                 if current.Username == self.user.Username:
                     raise ValueError("Nu poți dezactiva propriul cont.")

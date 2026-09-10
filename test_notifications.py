@@ -8,7 +8,7 @@ import notifications
 
 
 class NotificationTests(unittest.TestCase):
-    def run_case(self, cycle_day, *, done=False, sent=False, crp="CRP", fail=False):
+    def run_case(self, cycle_day, *, done=False, sent=False, crp="CRP", fail=False, fail_crp=False):
         today = date(2026, 9, 10)
         vehicle = SimpleNamespace(
             VehicleID=1, VIN="TEST", Model="Model", SellerName="Seller",
@@ -38,6 +38,10 @@ class NotificationTests(unittest.TestCase):
                 with self.assertLogs(level="ERROR"):
                     self.assertEqual(notifications.run_notifications(), 1)
                 mark.assert_not_called()
+            elif fail_crp:
+                send.side_effect = [RuntimeError("CRP failed"), None]
+                with self.assertLogs(level="ERROR"):
+                    self.assertEqual(notifications.run_notifications(), 1)
             else:
                 notifications.run_notifications()
             return send.call_count, [call.args[1] for call in mark.call_args_list]
@@ -62,6 +66,9 @@ class NotificationTests(unittest.TestCase):
 
     def test_failed_send_is_not_marked(self):
         self.run_case(30, fail=True)
+
+    def test_crp_failure_does_not_skip_inspection(self):
+        self.assertEqual(self.run_case(27, crp=None, fail_crp=True), (2, ["DAY27"]))
 
     def test_partial_refusal_is_reported(self):
         with (
@@ -88,7 +95,7 @@ class NotificationTests(unittest.TestCase):
             patch.object(notifications.db, "get_active_advisors", return_value=[]),
             patch.object(notifications.db, "get_advisor_manager", return_value=None),
             patch.object(notifications.db, "get_general_manager", return_value=None),
-            patch.object(notifications, "process_vehicles", side_effect=[RuntimeError("failure"), None]) as process,
+            patch.object(notifications, "process_vehicles", side_effect=[RuntimeError("failure"), 0]) as process,
             self.assertLogs(level="ERROR"),
         ):
             self.assertEqual(notifications.run_notifications(), 1)

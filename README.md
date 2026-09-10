@@ -32,6 +32,8 @@ calea absolută către Python din `.venv`, argumentul cu calea către
 necesită acces SQL și variabila de mediu SMTP. Programarea nu este creată automat.
 
 Administratorii pot adăuga, edita și activa/dezactiva utilizatori din Configurare.
+Username-ul existent nu poate fi redenumit, pentru a păstra alocările și istoricul.
+Contul activ și permisiunile se reverifică înainte de fiecare salvare din interfață.
 Nu se pot dezactiva singuri sau schimba propriul rol/username în sesiunea curentă.
 
 ## Notificări și erori
@@ -43,6 +45,7 @@ doar după ziua 30, conform regulii curente.
 O blocare SQL de sesiune împiedică două procese de notificare să ruleze simultan.
 O eroare este raportată în stderr cu VehicleID și procesarea continuă cu următorul
 vehicul. Codul de ieșire este 1 dacă există erori, inclusiv la obținerea blocării;
+O eroare a alertei CRP nu împiedică procesarea alertei de inspecție pentru același vehicul.
 altfel este 0. Conexiunea SMTP are timeout de 30 de secunde.
 
 Refuzurile SMTP, inclusiv cele parțiale, sunt raportate ca erori și notificarea

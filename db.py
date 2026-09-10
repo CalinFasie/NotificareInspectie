@@ -364,16 +364,23 @@ def update_config_user(
     with get_connection() as conn:
         cursor = conn.cursor()
         cursor.execute("""
+            SELECT Username FROM dbo.CONFIG WITH (UPDLOCK, HOLDLOCK)
+            WHERE ConfigID = ?
+        """, config_id)
+        current = cursor.fetchone()
+        if current is None:
+            raise ValueError("Utilizatorul nu mai există.")
+        if current.Username != username:
+            raise ValueError("Username nu poate fi schimbat; este folosit în alocări și istoric.")
+        cursor.execute("""
             UPDATE dbo.CONFIG
             SET
-                Username = ?,
                 FullName = ?,
                 Role = ?,
                 Email = ?,
                 ManagerEmail = ?
             WHERE ConfigID = ?
         """,
-            username,
             full_name,
             role,
             email,

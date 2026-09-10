@@ -207,8 +207,8 @@ def run_notifications():
         general_manager = db.get_general_manager()
         for vehicle in vehicles:
             try:
-                process_vehicles([vehicle], today, active_advisors,
-                                 advisor_manager, general_manager)
+                failures += process_vehicles([vehicle], today, active_advisors,
+                                             advisor_manager, general_manager)
             except Exception:
                 failures += 1
                 logging.exception("Notificare eșuată pentru VehicleID=%s", vehicle.VehicleID)
@@ -216,31 +216,35 @@ def run_notifications():
 
 
 def process_vehicles(vehicles, today, active_advisors, advisor_manager, general_manager):
-
+    failures = 0
     for vehicle in vehicles:
 
-        if (
-            check_missing_crp(vehicle, today)
-            and vehicle.LastCrpNotificationDate != today
-        ):
-            recipients = get_crp_recipients(
-                vehicle,
-                advisor_manager,
-            )
+        try:
+            if (
+                check_missing_crp(vehicle, today)
+                and vehicle.LastCrpNotificationDate != today
+            ):
+                recipients = get_crp_recipients(
+                    vehicle,
+                    advisor_manager,
+                )
 
-            subject, body = build_crp_email(vehicle)
+                subject, body = build_crp_email(vehicle)
 
-            send_email(
-                recipients,
-                subject,
-                body,
-            )
+                send_email(
+                    recipients,
+                    subject,
+                    body,
+                )
 
-            db.mark_notification_sent(
-                vehicle.VehicleID,
-                "CRP",
-                today,
-            )
+                db.mark_notification_sent(
+                    vehicle.VehicleID,
+                    "CRP",
+                    today,
+                )
+        except Exception:
+            failures += 1
+            logging.exception("Alerta CRP eșuată pentru VehicleID=%s", vehicle.VehicleID)
 
         _data_start, cycle_day, due_date = get_inspection_cycle(
             vehicle,
@@ -298,6 +302,8 @@ def process_vehicles(vehicles, today, active_advisors, advisor_manager, general_
                 "OVERDUE",
                 today,
             )
+
+    return failures
 
 
 if __name__ == "__main__":
