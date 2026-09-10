@@ -3,7 +3,6 @@ from datetime import date, timedelta
 
 import db
 
-
 MANAGER_ROLES = {
     "SELLER_MANAGER",
     "ADVISOR_MANAGER",

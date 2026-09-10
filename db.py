@@ -1,6 +1,6 @@
 import pyodbc
 
-from config import SQL_SERVER, SQL_DATABASE
+from config import SQL_DATABASE, SQL_SERVER
 
 
 def get_connection():
@@ -237,7 +237,7 @@ def update_inspection(inspection_id, inspection_date):
         conn.commit()
 
 
-def get_notification_vehicles():
+def get_notification_vehicles(today):
     with get_connection() as conn:
         cursor = conn.cursor()
         cursor.execute("""
@@ -263,7 +263,8 @@ def get_notification_vehicles():
                     SELECT MAX(i.InspectionDate)
                     FROM dbo.INSPECTIONS i
                     WHERE i.VehicleID = v.VehicleID
-                ) AS LastInspectionDate
+                      AND i.InspectionDate < ?
+                ) AS LastInspectionBeforeToday
 
             FROM dbo.VEHICLES v
 
@@ -274,7 +275,7 @@ def get_notification_vehicles():
                 ON a.Username = v.AdvisorUsername
 
             WHERE v.InvoiceDate IS NULL
-        """)
+        """, today)
 
         return cursor.fetchall()
 
@@ -352,3 +353,18 @@ def set_config_user_active(config_id, active):
         """, active, config_id)
 
         conn.commit()
+
+def get_advisor_manager():
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT TOP 1
+                Username,
+                FullName,
+                Email
+            FROM dbo.CONFIG
+            WHERE Role = 'ADVISOR_MANAGER'
+              AND Active = 1
+        """)
+
+        return cursor.fetchone()
