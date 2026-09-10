@@ -14,6 +14,7 @@ MANAGER_ROLES = {
     "ADVISOR_MANAGER",
     "GENERAL_MANAGER",
 }
+VALID_ROLES = MANAGER_ROLES | {"SELLER", "ADVISOR", "ADMIN"}
 
 
 def get_windows_username():
@@ -28,6 +29,8 @@ def load_current_user():
         raise PermissionError(
             f"Utilizatorul Windows '{username}' nu este configurat sau este inactiv."
         )
+    if user.Role not in VALID_ROLES:
+        raise PermissionError("Rolul utilizatorului nu este valid.")
 
     return user
 
@@ -354,6 +357,9 @@ class VehicleCheckApp:
 
         if can_manage_config(self.user):
             ttk.Button(
+                frame, text="Schimbă alocarea", command=self.assignment_dialog,
+            ).pack(side="left", padx=4)
+            ttk.Button(
                 frame,
                 text="Configurare",
                 command=self.config_dialog,
@@ -510,9 +516,9 @@ class VehicleCheckApp:
                         "VIN trebuie să aibă 17 caractere."
                     )
 
-                if not model:
+                if not model or len(model) > 100:
                     raise ValueError(
-                        "Modelul este obligatoriu."
+                        "Modelul este obligatoriu și poate avea cel mult 100 de caractere."
                     )
 
                 reception_date = parse_date(
@@ -625,9 +631,9 @@ class VehicleCheckApp:
                 crp = crp_entry.get().strip()
                 self.require_permission(can_enter_crp)
 
-                if not crp:
+                if not crp or len(crp) > 50:
                     raise ValueError(
-                        "CRP este obligatoriu."
+                        "CRP este obligatoriu și poate avea cel mult 50 de caractere."
                     )
 
                 if self.user.Role == "ADVISOR":
@@ -996,6 +1002,57 @@ class VehicleCheckApp:
                 command=edit,
             ).pack(pady=5)
 
+    def assignment_dialog(self):
+        try:
+            self.require_permission(can_manage_config)
+            vehicle_id = self.selected_vehicle_id()
+            if vehicle_id is None:
+                return
+            vehicle = db.get_vehicle(vehicle_id)
+            if vehicle is None or vehicle.InvoiceDate is not None:
+                raise ValueError("Vehiculul nu mai este activ. Reîncarcă lista.")
+            users = db.get_config_users()
+            sellers = {f"{u.FullName} ({u.Username})": u.Username
+                       for u in users if u.Active and can_add_vehicle(u)}
+            advisors = {f"{u.FullName} ({u.Username})": u.Username
+                        for u in users if u.Active and u.Role == "ADVISOR"}
+        except Exception as exc:
+            messagebox.showerror("Eroare", str(exc))
+            return
+
+        window = tk.Toplevel(self.root)
+        window.title("Schimbă alocarea")
+        seller = tk.StringVar(value=next((label for label, name in sellers.items()
+                                         if name == vehicle.SellerUsername), ""))
+        advisor = tk.StringVar(value=next((label for label, name in advisors.items()
+                                          if name == vehicle.AdvisorUsername), ""))
+        ttk.Label(window, text="Seller").grid(row=0, column=0, padx=10, pady=10)
+        ttk.Combobox(window, textvariable=seller, values=list(sellers),
+                     state="readonly", width=45).grid(row=0, column=1, padx=10)
+        ttk.Label(window, text="Advisor").grid(row=1, column=0, padx=10, pady=10)
+        ttk.Combobox(window, textvariable=advisor, values=[""] + list(advisors),
+                     state="readonly", width=45).grid(row=1, column=1, padx=10)
+        ttk.Label(window, text="Eliminarea consilierului șterge și CRP.").grid(
+            row=2, column=0, columnspan=2, padx=10, pady=10)
+
+        def save():
+            try:
+                self.require_permission(can_manage_config)
+                if seller.get() not in sellers:
+                    raise ValueError("Selectează Seller.")
+                selected_advisor = advisors.get(advisor.get())
+                if not selected_advisor and vehicle.CRP:
+                    if not messagebox.askyesno("Confirmare", "Elimini consilierul și CRP?", parent=window):
+                        return
+                db.change_vehicle_assignment(vehicle_id, sellers[seller.get()], selected_advisor)
+                window.destroy()
+                self.refresh()
+            except Exception as exc:
+                messagebox.showerror("Eroare", str(exc), parent=window)
+
+        ttk.Button(window, text="Salvează", command=save).grid(
+            row=3, column=0, columnspan=2, pady=10)
+
     def config_dialog(self):
         try:
             self.require_permission(can_manage_config)
@@ -1060,6 +1117,9 @@ class VehicleCheckApp:
                 data = [values[field].get().strip() for field in fields]
                 if not all(data[:4]) or data[2] not in roles:
                     raise ValueError("Completează Username, FullName, Role și Email.")
+                for field, value, limit in zip(fields, data, (100, 150, 30, 255, 255)):
+                    if len(value) > limit:
+                        raise ValueError(f"{field}: maximum {limit} de caractere.")
                 for email in (data[3], data[4]):
                     if email and ("@" not in email or any(c.isspace() for c in email)):
                         raise ValueError("Adresă email invalidă.")
@@ -1067,14 +1127,14 @@ class VehicleCheckApp:
                        and u.ConfigID != selected["id"] for u in users.values()):
                     raise ValueError("Username există deja.")
                 if selected["id"] is None:
-                    db.add_config_user(*data)
+                    db.add_config_user(*data[:4], data[4] or None)
                 else:
                     current = users[str(selected["id"])]
                     if current.Username == self.user.Username and (
                         data[0] != current.Username or data[2] != "ADMIN"
                     ):
                         raise ValueError("Nu poți schimba propriul username sau rol în sesiunea curentă.")
-                    db.update_config_user(selected["id"], *data)
+                    db.update_config_user(selected["id"], *data[:4], data[4] or None)
                 refresh()
                 new()
             except Exception as exc:
@@ -1122,10 +1182,11 @@ def main():
         root.destroy()
         return
 
-    VehicleCheckApp(
-        root,
-        user,
-    )
+    def report_callback_error(_exception_type, exception, _traceback):
+        messagebox.showerror("Eroare", str(exception), parent=root)
+
+    root.report_callback_exception = report_callback_error
+    VehicleCheckApp(root, user)
 
     root.mainloop()
 

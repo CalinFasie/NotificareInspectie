@@ -6,13 +6,26 @@ from config import SQL_DATABASE, SQL_SERVER
 
 
 def get_connection():
-    return pyodbc.connect(
+    conn = pyodbc.connect(
         f"DRIVER={{ODBC Driver 18 for SQL Server}};"
         f"SERVER={SQL_SERVER};"
         f"DATABASE={SQL_DATABASE};"
         f"Trusted_Connection=yes;"
-        f"TrustServerCertificate=yes;"
+        f"TrustServerCertificate=yes;",
+        timeout=10,
     )
+    conn.timeout = 30
+    return conn
+
+
+@contextmanager
+def connection_scope():
+    conn = get_connection()
+    try:
+        with conn as active:
+            yield active
+    finally:
+        conn.close()
 
 
 @contextmanager
@@ -46,7 +59,7 @@ def notification_lock():
 
 
 def get_user_config(username):
-    with get_connection() as conn:
+    with connection_scope() as conn:
         cursor = conn.cursor()
         cursor.execute("""
             SELECT
@@ -66,7 +79,7 @@ def get_user_config(username):
 
 
 def get_active_advisors():
-    with get_connection() as conn:
+    with connection_scope() as conn:
         cursor = conn.cursor()
         cursor.execute("""
             SELECT
@@ -84,7 +97,7 @@ def get_active_advisors():
 
 
 def get_general_manager():
-    with get_connection() as conn:
+    with connection_scope() as conn:
         cursor = conn.cursor()
         cursor.execute("""
             SELECT TOP 1
@@ -100,7 +113,7 @@ def get_general_manager():
 
 
 def get_active_vehicles():
-    with get_connection() as conn:
+    with connection_scope() as conn:
         cursor = conn.cursor()
         cursor.execute("""
             SELECT
@@ -122,7 +135,7 @@ def get_active_vehicles():
 
 
 def get_vehicle(vehicle_id):
-    with get_connection() as conn:
+    with connection_scope() as conn:
         cursor = conn.cursor()
         cursor.execute("""
             SELECT
@@ -143,7 +156,7 @@ def get_vehicle(vehicle_id):
 
 
 def add_vehicle(vin, model, reception_date, seller_username):
-    with get_connection() as conn:
+    with connection_scope() as conn:
         cursor = conn.cursor()
         cursor.execute("""
             INSERT INTO dbo.VEHICLES
@@ -156,7 +169,7 @@ def add_vehicle(vin, model, reception_date, seller_username):
 
 
 def set_crp(vehicle_id, crp, advisor_username):
-    with get_connection() as conn:
+    with connection_scope() as conn:
         cursor = conn.cursor()
         cursor.execute("""
             UPDATE dbo.VEHICLES
@@ -166,15 +179,19 @@ def set_crp(vehicle_id, crp, advisor_username):
             WHERE VehicleID = ?
               AND InvoiceDate IS NULL
               AND CRP IS NULL
-        """, crp, advisor_username, vehicle_id)
+              AND EXISTS (
+                  SELECT 1 FROM dbo.CONFIG
+                  WHERE Username = ? AND Active = 1 AND Role = 'ADVISOR'
+              )
+        """, crp, advisor_username, vehicle_id, advisor_username)
 
         if cursor.rowcount != 1:
-            raise ValueError("Vehiculul nu mai este activ, nu există sau are deja CRP. Reîncarcă lista.")
+            raise ValueError("Vehiculul nu mai este activ, are deja CRP sau consilierul nu mai este activ. Reîncarcă lista.")
         conn.commit()
 
 
 def set_invoice_date(vehicle_id, invoice_date):
-    with get_connection() as conn:
+    with connection_scope() as conn:
         cursor = conn.cursor()
         cursor.execute("""
             UPDATE dbo.VEHICLES
@@ -189,8 +206,32 @@ def set_invoice_date(vehicle_id, invoice_date):
 
 
 def change_vehicle_assignment(vehicle_id, seller_username, advisor_username):
-    with get_connection() as conn:
+    with connection_scope() as conn:
         cursor = conn.cursor()
+        cursor.execute("""
+            SELECT CRP, InvoiceDate FROM dbo.VEHICLES WITH (UPDLOCK, HOLDLOCK)
+            WHERE VehicleID = ?
+        """, vehicle_id)
+        vehicle = cursor.fetchone()
+        if vehicle is None or vehicle.InvoiceDate is not None:
+            raise ValueError("Vehiculul nu mai este activ sau nu există.")
+        if advisor_username and not vehicle.CRP:
+            raise ValueError("Introdu CRP înainte de alocarea unui consilier.")
+
+        cursor.execute("""
+            SELECT Username FROM dbo.CONFIG WITH (UPDLOCK, HOLDLOCK)
+            WHERE Username = ? AND Active = 1
+              AND Role IN ('SELLER', 'SELLER_MANAGER', 'ADVISOR_MANAGER', 'GENERAL_MANAGER', 'ADMIN')
+        """, seller_username)
+        if cursor.fetchone() is None:
+            raise ValueError("Seller trebuie să fie un utilizator activ cu drept de adăugare vehicule.")
+        if advisor_username:
+            cursor.execute("""
+                SELECT Username FROM dbo.CONFIG WITH (UPDLOCK, HOLDLOCK)
+                WHERE Username = ? AND Active = 1 AND Role = 'ADVISOR'
+            """, advisor_username)
+            if cursor.fetchone() is None:
+                raise ValueError("Consilierul selectat nu mai este activ.")
 
         if advisor_username:
             cursor.execute("""
@@ -214,7 +255,7 @@ def change_vehicle_assignment(vehicle_id, seller_username, advisor_username):
 
 
 def get_inspections(vehicle_id):
-    with get_connection() as conn:
+    with connection_scope() as conn:
         cursor = conn.cursor()
         cursor.execute("""
             SELECT
@@ -232,7 +273,7 @@ def get_inspections(vehicle_id):
 
 
 def get_last_inspection(vehicle_id):
-    with get_connection() as conn:
+    with connection_scope() as conn:
         cursor = conn.cursor()
         cursor.execute("""
             SELECT TOP 1
@@ -250,7 +291,7 @@ def get_last_inspection(vehicle_id):
 
 
 def add_inspection(vehicle_id, inspection_date, recorded_by):
-    with get_connection() as conn:
+    with connection_scope() as conn:
         cursor = conn.cursor()
         cursor.execute("""
             SELECT InvoiceDate
@@ -271,7 +312,7 @@ def add_inspection(vehicle_id, inspection_date, recorded_by):
 
 
 def update_inspection(inspection_id, inspection_date):
-    with get_connection() as conn:
+    with connection_scope() as conn:
         cursor = conn.cursor()
         cursor.execute("""
             UPDATE dbo.INSPECTIONS
@@ -279,11 +320,13 @@ def update_inspection(inspection_id, inspection_date):
             WHERE InspectionID = ?
         """, inspection_date, inspection_id)
 
+        if cursor.rowcount != 1:
+            raise ValueError("Verificarea nu mai există. Reîncarcă istoricul.")
         conn.commit()
 
 
 def get_notification_vehicles(today):
-    with get_connection() as conn:
+    with connection_scope() as conn:
         cursor = conn.cursor()
         cursor.execute("""
             SELECT
@@ -335,7 +378,7 @@ def get_notification_vehicles(today):
         return cursor.fetchall()
 
 def get_config_users():
-    with get_connection() as conn:
+    with connection_scope() as conn:
         cursor = conn.cursor()
         cursor.execute("""
             SELECT
@@ -354,7 +397,7 @@ def get_config_users():
 
 
 def add_config_user(username, full_name, role, email, manager_email=None):
-    with get_connection() as conn:
+    with connection_scope() as conn:
         cursor = conn.cursor()
         cursor.execute("""
             INSERT INTO dbo.CONFIG
@@ -374,7 +417,7 @@ def update_config_user(
     email,
     manager_email,
 ):
-    with get_connection() as conn:
+    with connection_scope() as conn:
         cursor = conn.cursor()
         cursor.execute("""
             SELECT Username FROM dbo.CONFIG WITH (UPDLOCK, HOLDLOCK)
@@ -405,7 +448,7 @@ def update_config_user(
 
 
 def set_config_user_active(config_id, active):
-    with get_connection() as conn:
+    with connection_scope() as conn:
         cursor = conn.cursor()
         cursor.execute("""
             UPDATE dbo.CONFIG
@@ -413,10 +456,12 @@ def set_config_user_active(config_id, active):
             WHERE ConfigID = ?
         """, active, config_id)
 
+        if cursor.rowcount != 1:
+            raise ValueError("Utilizatorul nu mai există. Reîncarcă lista.")
         conn.commit()
 
 def get_advisor_manager():
-    with get_connection() as conn:
+    with connection_scope() as conn:
         cursor = conn.cursor()
         cursor.execute("""
             SELECT TOP 1
@@ -442,7 +487,7 @@ def mark_notification_sent(vehicle_id, notification_type, sent_date):
     if column is None:
         raise ValueError("Tip notificare invalid.")
 
-    with get_connection() as conn:
+    with connection_scope() as conn:
         cursor = conn.cursor()
 
         cursor.execute(

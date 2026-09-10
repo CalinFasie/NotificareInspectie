@@ -1,5 +1,8 @@
+import argparse
 import logging
 import smtplib
+import sys
+from contextlib import nullcontext
 from datetime import timedelta
 from email.mime.text import MIMEText
 
@@ -16,8 +19,10 @@ def clean_recipients(recipients):
     result = []
 
     for email in recipients:
-        if email and email not in result:
-            result.append(email)
+        if email:
+            email = email.strip()
+            if email and email.casefold() not in {item.casefold() for item in result}:
+                result.append(email)
 
     return result
 
@@ -197,9 +202,18 @@ def send_email(recipients, subject, body):
             raise smtplib.SMTPRecipientsRefused(refused)
 
 
-def run_notifications():
+def deliver_notification(vehicle_id, notification_type, today, recipients, subject, body, dry_run=False):
+    if dry_run:
+        logging.info("PREVIZUALIZARE VehicleID=%s Tip=%s Către=%s Subiect=%s",
+                     vehicle_id, notification_type, ", ".join(clean_recipients(recipients)), subject)
+        return
+    send_email(recipients, subject, body)
+    db.mark_notification_sent(vehicle_id, notification_type, today)
+
+
+def run_notifications(dry_run=False):
     failures = 0
-    with db.notification_lock():
+    with (nullcontext() if dry_run else db.notification_lock()):
         today = app_today()
         vehicles = db.get_notification_vehicles(today)
         active_advisors = db.get_active_advisors()
@@ -208,14 +222,14 @@ def run_notifications():
         for vehicle in vehicles:
             try:
                 failures += process_vehicles([vehicle], today, active_advisors,
-                                             advisor_manager, general_manager)
+                                             advisor_manager, general_manager, dry_run=dry_run)
             except Exception:
                 failures += 1
                 logging.exception("Notificare eșuată pentru VehicleID=%s", vehicle.VehicleID)
     return failures
 
 
-def process_vehicles(vehicles, today, active_advisors, advisor_manager, general_manager):
+def process_vehicles(vehicles, today, active_advisors, advisor_manager, general_manager, dry_run=False):
     failures = 0
     for vehicle in vehicles:
 
@@ -231,17 +245,8 @@ def process_vehicles(vehicles, today, active_advisors, advisor_manager, general_
 
                 subject, body = build_crp_email(vehicle)
 
-                send_email(
-                    recipients,
-                    subject,
-                    body,
-                )
-
-                db.mark_notification_sent(
-                    vehicle.VehicleID,
-                    "CRP",
-                    today,
-                )
+                deliver_notification(vehicle.VehicleID, "CRP", today,
+                                     recipients, subject, body, dry_run)
         except Exception:
             failures += 1
             logging.exception("Alerta CRP eșuată pentru VehicleID=%s", vehicle.VehicleID)
@@ -270,13 +275,8 @@ def process_vehicles(vehicles, today, active_advisors, advisor_manager, general_
                 due_date,
             )
 
-            send_email(recipients, subject, body)
-
-            db.mark_notification_sent(
-                vehicle.VehicleID,
-                "DAY27",
-                today,
-            )
+            deliver_notification(vehicle.VehicleID, "DAY27", today,
+                                 recipients, subject, body, dry_run)
 
         elif (
             (cycle_day == 30 or (cycle_day > 30 and not inspection_done_today))
@@ -295,21 +295,23 @@ def process_vehicles(vehicles, today, active_advisors, advisor_manager, general_
                 cycle_day,
             )
 
-            send_email(recipients, subject, body)
-
-            db.mark_notification_sent(
-                vehicle.VehicleID,
-                "OVERDUE",
-                today,
-            )
+            deliver_notification(vehicle.VehicleID, "OVERDUE", today,
+                                 recipients, subject, body, dry_run)
 
     return failures
 
 
 if __name__ == "__main__":
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8")
+    parser = argparse.ArgumentParser(description="Notificări VehicleCheck")
+    parser.add_argument("--dry-run", action="store_true",
+                        help="Citește SQL și afișează alertele fără emailuri sau actualizări SQL.")
+    args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     try:
-        failures = run_notifications()
+        failures = run_notifications(dry_run=args.dry_run)
     except Exception:
         logging.exception("Procesul de notificări nu a putut fi finalizat.")
         raise SystemExit(1)
