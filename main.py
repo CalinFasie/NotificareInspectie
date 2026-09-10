@@ -988,10 +988,104 @@ class VehicleCheckApp:
             ).pack(pady=5)
 
     def config_dialog(self):
-        messagebox.showinfo(
-            "VehicleCheck",
-            "Configurarea CONFIG va fi implementată în pasul următor.",
-        )
+        if not can_manage_config(self.user):
+            messagebox.showerror("Acces refuzat", "Configurarea necesită rolul ADMIN.")
+            return
+
+        window = tk.Toplevel(self.root)
+        window.title("Configurare utilizatori")
+        fields = ("Username", "FullName", "Role", "Email", "ManagerEmail")
+        roles = ("SELLER", "ADVISOR", "SELLER_MANAGER", "ADVISOR_MANAGER",
+                 "GENERAL_MANAGER", "ADMIN")
+        tree = ttk.Treeview(window, columns=fields + ("Active",), show="headings", height=10)
+        for field in fields + ("Active",):
+            tree.heading(field, text=field)
+            tree.column(field, width=140)
+        tree.grid(row=0, column=0, columnspan=3, padx=10, pady=10)
+        values = {field: tk.StringVar() for field in fields}
+        selected = {"id": None}
+        users = {}
+        for row, field in enumerate(fields, start=1):
+            ttk.Label(window, text=field).grid(row=row, column=0, sticky="e")
+            if field == "Role":
+                entry = ttk.Combobox(window, textvariable=values[field],
+                                     values=roles, state="readonly")
+            else:
+                entry = ttk.Entry(window, textvariable=values[field], width=40)
+            entry.grid(row=row, column=1, padx=8, pady=4, sticky="w")
+
+        def refresh():
+            rows = db.get_config_users()
+            users.clear()
+            for item in tree.get_children():
+                tree.delete(item)
+            for user in rows:
+                users[str(user.ConfigID)] = user
+                tree.insert("", "end", iid=str(user.ConfigID),
+                            values=tuple(getattr(user, field) or "" for field in fields)
+                            + ("Da" if user.Active else "Nu",))
+
+        def select(_event):
+            selection = tree.selection()
+            if selection:
+                user = users[selection[0]]
+                selected["id"] = user.ConfigID
+                for field in fields:
+                    values[field].set(getattr(user, field) or "")
+
+        def new():
+            selected["id"] = None
+            tree.selection_remove(*tree.selection())
+            for value in values.values():
+                value.set("")
+
+        def save():
+            try:
+                data = [values[field].get().strip() for field in fields]
+                if not all(data[:4]) or data[2] not in roles:
+                    raise ValueError("Completează Username, FullName, Role și Email.")
+                for email in (data[3], data[4]):
+                    if email and ("@" not in email or any(c.isspace() for c in email)):
+                        raise ValueError("Adresă email invalidă.")
+                if any(u.Username.casefold() == data[0].casefold()
+                       and u.ConfigID != selected["id"] for u in users.values()):
+                    raise ValueError("Username există deja.")
+                if selected["id"] is None:
+                    db.add_config_user(*data)
+                else:
+                    current = users[str(selected["id"])]
+                    if current.Username == self.user.Username and (
+                        data[0] != current.Username or data[2] != "ADMIN"
+                    ):
+                        raise ValueError("Nu poți schimba propriul username sau rol în sesiunea curentă.")
+                    db.update_config_user(selected["id"], *data)
+                refresh()
+                new()
+            except Exception as exc:
+                messagebox.showerror("Eroare", str(exc), parent=window)
+
+        def toggle_active():
+            if selected["id"] is None:
+                return
+            try:
+                current = users[str(selected["id"])]
+                if current.Username == self.user.Username:
+                    raise ValueError("Nu poți dezactiva propriul cont.")
+                db.set_config_user_active(current.ConfigID, not current.Active)
+                refresh()
+                new()
+            except Exception as exc:
+                messagebox.showerror("Eroare", str(exc), parent=window)
+
+        tree.bind("<<TreeviewSelect>>", select)
+        ttk.Button(window, text="Utilizator nou", command=new).grid(row=6, column=0, pady=10)
+        ttk.Button(window, text="Salvează", command=save).grid(row=6, column=1, pady=10)
+        ttk.Button(window, text="Activează / Dezactivează", command=toggle_active).grid(row=6, column=2)
+        try:
+            refresh()
+        except Exception as exc:
+            messagebox.showerror("Eroare", str(exc), parent=window)
+            window.destroy()
 
 
 def main():

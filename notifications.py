@@ -1,3 +1,4 @@
+import logging
 import smtplib
 from datetime import timedelta
 from email.mime.text import MIMEText
@@ -171,6 +172,9 @@ def build_day30_email(vehicle, due_date, cycle_day):
 
 
 def send_email(recipients, subject, body):
+    recipients = clean_recipients(recipients)
+    if not recipients:
+        raise ValueError("Lista destinatarilor este goală.")
     if not SMTP_PASSWORD:
         raise RuntimeError(
             "Parola SMTP nu este configurată."
@@ -181,23 +185,37 @@ def send_email(recipients, subject, body):
     message["From"] = SMTP_USER
     message["To"] = ", ".join(recipients)
 
-    with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as smtp:
+    with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=30) as smtp:
         smtp.starttls()
         smtp.login(SMTP_USER, SMTP_PASSWORD)
-        smtp.sendmail(
+        refused = smtp.sendmail(
             SMTP_USER,
             recipients,
             message.as_string(),
         )
+        if refused:
+            raise smtplib.SMTPRecipientsRefused(refused)
 
 
 def run_notifications():
-    today = app_today()
+    failures = 0
+    with db.notification_lock():
+        today = app_today()
+        vehicles = db.get_notification_vehicles(today)
+        active_advisors = db.get_active_advisors()
+        advisor_manager = db.get_advisor_manager()
+        general_manager = db.get_general_manager()
+        for vehicle in vehicles:
+            try:
+                process_vehicles([vehicle], today, active_advisors,
+                                 advisor_manager, general_manager)
+            except Exception:
+                failures += 1
+                logging.exception("Notificare eșuată pentru VehicleID=%s", vehicle.VehicleID)
+    return failures
 
-    vehicles = db.get_notification_vehicles(today)
-    active_advisors = db.get_active_advisors()
-    advisor_manager = db.get_advisor_manager()
-    general_manager = db.get_general_manager()
+
+def process_vehicles(vehicles, today, active_advisors, advisor_manager, general_manager):
 
     for vehicle in vehicles:
 
@@ -280,3 +298,14 @@ def run_notifications():
                 "OVERDUE",
                 today,
             )
+
+
+if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    try:
+        failures = run_notifications()
+    except Exception:
+        logging.exception("Procesul de notificări nu a putut fi finalizat.")
+        raise SystemExit(1)
+    logging.info("Proces finalizat: %s vehicule cu erori.", failures)
+    raise SystemExit(1 if failures else 0)

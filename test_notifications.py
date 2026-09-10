@@ -1,4 +1,5 @@
 import unittest
+import smtplib
 from datetime import date, datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -23,6 +24,7 @@ class NotificationTests(unittest.TestCase):
             LastOverdueNotificationDate=today if sent else None,
         )
         with (
+            patch.object(notifications.db, "notification_lock"),
             patch.object(notifications, "app_today", return_value=today),
             patch.object(notifications.db, "get_notification_vehicles", return_value=[vehicle]),
             patch.object(notifications.db, "get_active_advisors", return_value=[]),
@@ -33,8 +35,8 @@ class NotificationTests(unittest.TestCase):
         ):
             if fail:
                 send.side_effect = RuntimeError("SMTP failed")
-                with self.assertRaises(RuntimeError):
-                    notifications.run_notifications()
+                with self.assertLogs(level="ERROR"):
+                    self.assertEqual(notifications.run_notifications(), 1)
                 mark.assert_not_called()
             else:
                 notifications.run_notifications()
@@ -60,3 +62,34 @@ class NotificationTests(unittest.TestCase):
 
     def test_failed_send_is_not_marked(self):
         self.run_case(30, fail=True)
+
+    def test_partial_refusal_is_reported(self):
+        with (
+            patch.object(notifications, "SMTP_PASSWORD", "test"),
+            patch.object(notifications.smtplib, "SMTP") as smtp,
+        ):
+            smtp.return_value.__enter__.return_value.sendmail.return_value = {
+                "bad@example.com": (550, b"Rejected")
+            }
+            with self.assertRaises(smtplib.SMTPRecipientsRefused):
+                notifications.send_email(["ok@example.com", "bad@example.com"], "Test", "Body")
+
+    def test_empty_recipients_do_not_connect(self):
+        with patch.object(notifications.smtplib, "SMTP") as smtp:
+            with self.assertRaises(ValueError):
+                notifications.send_email([], "Test", "Body")
+            smtp.assert_not_called()
+
+    def test_error_does_not_stop_next_vehicle(self):
+        with (
+            patch.object(notifications.db, "notification_lock"),
+            patch.object(notifications.db, "get_notification_vehicles", return_value=[
+                SimpleNamespace(VehicleID=1), SimpleNamespace(VehicleID=2)]),
+            patch.object(notifications.db, "get_active_advisors", return_value=[]),
+            patch.object(notifications.db, "get_advisor_manager", return_value=None),
+            patch.object(notifications.db, "get_general_manager", return_value=None),
+            patch.object(notifications, "process_vehicles", side_effect=[RuntimeError("failure"), None]) as process,
+            self.assertLogs(level="ERROR"),
+        ):
+            self.assertEqual(notifications.run_notifications(), 1)
+            self.assertEqual(process.call_count, 2)

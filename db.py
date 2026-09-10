@@ -1,3 +1,5 @@
+from contextlib import contextmanager
+
 import pyodbc
 
 from config import SQL_DATABASE, SQL_SERVER
@@ -11,6 +13,36 @@ def get_connection():
         f"Trusted_Connection=yes;"
         f"TrustServerCertificate=yes;"
     )
+
+
+@contextmanager
+def notification_lock():
+    conn = get_connection()
+    acquired = False
+    try:
+        cursor = conn.cursor()
+        cursor.execute("""
+            DECLARE @result int;
+            EXEC @result = sys.sp_getapplock
+                @Resource = 'VehicleCheck.notifications',
+                @LockMode = 'Exclusive', @LockOwner = 'Session',
+                @LockTimeout = 0;
+            SELECT @result;
+        """)
+        acquired = cursor.fetchone()[0] >= 0
+        if not acquired:
+            raise RuntimeError("Procesul de notificări este deja activ sau blocarea SQL a eșuat.")
+        yield
+    finally:
+        try:
+            if acquired:
+                conn.cursor().execute("""
+                    EXEC sys.sp_releaseapplock
+                        @Resource = 'VehicleCheck.notifications',
+                        @LockOwner = 'Session';
+                """)
+        finally:
+            conn.close()
 
 
 def get_user_config(username):
