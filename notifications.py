@@ -1,6 +1,7 @@
 import smtplib
-from datetime import date, timedelta
+from datetime import datetime, timedelta
 from email.mime.text import MIMEText
+from zoneinfo import ZoneInfo
 
 import db
 from config import (
@@ -9,6 +10,8 @@ from config import (
     SMTP_PORT,
     SMTP_USER,
 )
+
+LOCAL_TIMEZONE = ZoneInfo("Europe/Bucharest")
 
 
 def clean_recipients(recipients):
@@ -192,7 +195,7 @@ def send_email(recipients, subject, body):
 
 
 def run_notifications():
-    today = date.today()
+    today = datetime.now(LOCAL_TIMEZONE).date()
 
     vehicles = db.get_notification_vehicles(today)
     active_advisors = db.get_active_advisors()
@@ -215,7 +218,7 @@ def run_notifications():
                 body,
             )
 
-        data_start, cycle_day, due_date = get_inspection_cycle(
+        _data_start, cycle_day, due_date = get_inspection_cycle(
             vehicle,
             today,
         )

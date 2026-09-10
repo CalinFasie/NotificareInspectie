@@ -1,7 +1,10 @@
 import getpass
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 import db
+
+LOCAL_TIMEZONE = ZoneInfo("Europe/Bucharest")
 
 MANAGER_ROLES = {
     "SELLER_MANAGER",
@@ -21,6 +24,10 @@ VALID_ROLES = {
 
 def get_windows_username():
     return getpass.getuser()
+
+
+def get_today():
+    return datetime.now(LOCAL_TIMEZONE).date()
 
 
 def load_current_user():
@@ -87,7 +94,7 @@ def get_inspection_data_start(vehicle):
 
 def calculate_vehicle_status(vehicle, today=None):
     if today is None:
-        today = date.today()
+        today = get_today()
 
     if vehicle.InvoiceDate is not None:
         return {
@@ -149,7 +156,7 @@ def calculate_vehicle_status(vehicle, today=None):
 
 def get_crp_display(vehicle, today=None):
     if today is None:
-        today = date.today()
+        today = get_today()
 
     if vehicle.CRP:
         return vehicle.CRP
@@ -215,14 +222,14 @@ def add_inspection(user, vehicle_id, inspection_date=None):
         raise PermissionError("Nu ai dreptul să introduci verificări.")
 
     if inspection_date is None:
-        inspection_date = date.today()
+        inspection_date = get_today()
 
-    if user.Role == "ADVISOR" and inspection_date != date.today():
+    if user.Role == "ADVISOR" and inspection_date != get_today():
         raise PermissionError(
             "Advisor poate introduce doar verificarea cu data curentă."
         )
 
-    if inspection_date != date.today() and not can_add_retroactive_inspection(user):
+    if inspection_date != get_today() and not can_add_retroactive_inspection(user):
         raise PermissionError(
             "Nu ai dreptul să introduci verificări retroactive."
         )
@@ -249,7 +256,7 @@ def invoice_vehicle(user, vehicle_id, invoice_date=None):
         raise PermissionError("Nu ai dreptul să facturezi vehiculul.")
 
     if invoice_date is None:
-        invoice_date = date.today()
+        invoice_date = get_today()
 
     db.set_invoice_date(
         vehicle_id=vehicle_id,
