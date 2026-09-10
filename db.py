@@ -165,8 +165,11 @@ def set_crp(vehicle_id, crp, advisor_username):
                 AdvisorUsername = ?
             WHERE VehicleID = ?
               AND InvoiceDate IS NULL
+              AND CRP IS NULL
         """, crp, advisor_username, vehicle_id)
 
+        if cursor.rowcount != 1:
+            raise ValueError("Vehiculul nu mai este activ, nu există sau are deja CRP. Reîncarcă lista.")
         conn.commit()
 
 
@@ -180,6 +183,8 @@ def set_invoice_date(vehicle_id, invoice_date):
               AND InvoiceDate IS NULL
         """, invoice_date, vehicle_id)
 
+        if cursor.rowcount != 1:
+            raise ValueError("Vehiculul nu mai este activ sau nu există. Reîncarcă lista.")
         conn.commit()
 
 
@@ -247,6 +252,14 @@ def get_last_inspection(vehicle_id):
 def add_inspection(vehicle_id, inspection_date, recorded_by):
     with get_connection() as conn:
         cursor = conn.cursor()
+        cursor.execute("""
+            SELECT InvoiceDate
+            FROM dbo.VEHICLES WITH (UPDLOCK, HOLDLOCK)
+            WHERE VehicleID = ?
+        """, vehicle_id)
+        vehicle = cursor.fetchone()
+        if vehicle is None or vehicle.InvoiceDate is not None:
+            raise ValueError("Nu poți adăuga verificări unui vehicul facturat sau inexistent.")
         cursor.execute("""
             INSERT INTO dbo.INSPECTIONS
                 (VehicleID, InspectionDate, RecordedBy)

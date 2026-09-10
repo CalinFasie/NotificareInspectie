@@ -593,7 +593,7 @@ class VehicleCheckApp:
 
             for advisor in advisors:
                 advisor_map[
-                    advisor.FullName
+                    f"{advisor.FullName} ({advisor.Username})"
                 ] = advisor.Username
 
             ttk.Label(
