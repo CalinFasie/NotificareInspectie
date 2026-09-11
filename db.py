@@ -126,7 +126,7 @@ def get_active_vehicles():
                 CRP,
                 AdvisorUsername,
                 InvoiceDate
-            FROM dbo.VEHICLES
+            FROM dbo._VEHICLES
             WHERE InvoiceDate IS NULL
             ORDER BY ReceptionDate, VehicleID
         """)
@@ -148,7 +148,7 @@ def get_vehicle(vehicle_id):
                 CRP,
                 AdvisorUsername,
                 InvoiceDate
-            FROM dbo.VEHICLES
+            FROM dbo._VEHICLES
             WHERE VehicleID = ?
         """, vehicle_id)
 
@@ -159,7 +159,7 @@ def add_vehicle(vin, model, reception_date, seller_username):
     with connection_scope() as conn:
         cursor = conn.cursor()
         cursor.execute("""
-            INSERT INTO dbo.VEHICLES
+            INSERT INTO dbo._VEHICLES
                 (VIN, Model, ReceptionDate, SellerUsername)
             VALUES
                 (?, ?, ?, ?)
@@ -172,7 +172,7 @@ def set_crp(vehicle_id, crp, advisor_username):
     with connection_scope() as conn:
         cursor = conn.cursor()
         cursor.execute("""
-            UPDATE dbo.VEHICLES
+            UPDATE dbo._VEHICLES
             SET
                 CRP = ?,
                 AdvisorUsername = ?
@@ -194,7 +194,7 @@ def set_invoice_date(vehicle_id, invoice_date):
     with connection_scope() as conn:
         cursor = conn.cursor()
         cursor.execute("""
-            UPDATE dbo.VEHICLES
+            UPDATE dbo._VEHICLES
             SET InvoiceDate = ?
             WHERE VehicleID = ?
               AND InvoiceDate IS NULL
@@ -209,7 +209,7 @@ def change_vehicle_assignment(vehicle_id, seller_username, advisor_username):
     with connection_scope() as conn:
         cursor = conn.cursor()
         cursor.execute("""
-            SELECT CRP, InvoiceDate FROM dbo.VEHICLES WITH (UPDLOCK, HOLDLOCK)
+            SELECT CRP, InvoiceDate FROM dbo._VEHICLES WITH (UPDLOCK, HOLDLOCK)
             WHERE VehicleID = ?
         """, vehicle_id)
         vehicle = cursor.fetchone()
@@ -235,7 +235,7 @@ def change_vehicle_assignment(vehicle_id, seller_username, advisor_username):
 
         if advisor_username:
             cursor.execute("""
-                UPDATE dbo.VEHICLES
+                UPDATE dbo._VEHICLES
                 SET
                     SellerUsername = ?,
                     AdvisorUsername = ?
@@ -243,7 +243,7 @@ def change_vehicle_assignment(vehicle_id, seller_username, advisor_username):
             """, seller_username, advisor_username, vehicle_id)
         else:
             cursor.execute("""
-                UPDATE dbo.VEHICLES
+                UPDATE dbo._VEHICLES
                 SET
                     SellerUsername = ?,
                     CRP = NULL,
@@ -264,7 +264,7 @@ def get_inspections(vehicle_id):
                 InspectionDate,
                 RecordedBy,
                 RecordedAt
-            FROM dbo.INSPECTIONS
+            FROM dbo._INSPECTIONS
             WHERE VehicleID = ?
             ORDER BY InspectionDate DESC, InspectionID DESC
         """, vehicle_id)
@@ -282,7 +282,7 @@ def get_last_inspection(vehicle_id):
                 InspectionDate,
                 RecordedBy,
                 RecordedAt
-            FROM dbo.INSPECTIONS
+            FROM dbo._INSPECTIONS
             WHERE VehicleID = ?
             ORDER BY InspectionDate DESC, InspectionID DESC
         """, vehicle_id)
@@ -295,14 +295,14 @@ def add_inspection(vehicle_id, inspection_date, recorded_by):
         cursor = conn.cursor()
         cursor.execute("""
             SELECT InvoiceDate
-            FROM dbo.VEHICLES WITH (UPDLOCK, HOLDLOCK)
+            FROM dbo._VEHICLES WITH (UPDLOCK, HOLDLOCK)
             WHERE VehicleID = ?
         """, vehicle_id)
         vehicle = cursor.fetchone()
         if vehicle is None or vehicle.InvoiceDate is not None:
             raise ValueError("Nu poți adăuga verificări unui vehicul facturat sau inexistent.")
         cursor.execute("""
-            INSERT INTO dbo.INSPECTIONS
+            INSERT INTO dbo._INSPECTIONS
                 (VehicleID, InspectionDate, RecordedBy)
             VALUES
                 (?, ?, ?)
@@ -315,7 +315,7 @@ def update_inspection(inspection_id, inspection_date):
     with connection_scope() as conn:
         cursor = conn.cursor()
         cursor.execute("""
-            UPDATE dbo.INSPECTIONS
+            UPDATE dbo._INSPECTIONS
             SET InspectionDate = ?
             WHERE InspectionID = ?
         """, inspection_date, inspection_id)
@@ -353,18 +353,18 @@ def get_notification_vehicles(today):
 
                 (
                     SELECT MAX(i.InspectionDate)
-                    FROM dbo.INSPECTIONS i
+                    FROM dbo._INSPECTIONS i
                     WHERE i.VehicleID = v.VehicleID
                 ) AS LastInspectionDate,
 
                 (
                     SELECT MAX(i.InspectionDate)
-                    FROM dbo.INSPECTIONS i
+                    FROM dbo._INSPECTIONS i
                     WHERE i.VehicleID = v.VehicleID
                       AND i.InspectionDate < ?
                 ) AS LastInspectionBeforeToday
 
-            FROM dbo.VEHICLES v
+            FROM dbo._VEHICLES v
 
             INNER JOIN dbo._CONFIG s
                 ON s.Username = v.SellerUsername
@@ -492,7 +492,7 @@ def mark_notification_sent(vehicle_id, notification_type, sent_date):
 
         cursor.execute(
             f"""
-            UPDATE dbo.VEHICLES
+            UPDATE dbo._VEHICLES
             SET {column} = ?
             WHERE VehicleID = ?
             """,
