@@ -3,7 +3,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 SQL_SERVER = "srv-sql"
-SQL_DATABASE = "VehicleCheck"
+SQL_DATABASE = "carsm"
 
 SMTP_HOST = "mail.carscenter.ro"
 SMTP_PORT = 587

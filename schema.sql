@@ -1,6 +1,6 @@
 -- Schema pentru o bază nouă, deja creată și selectată.
 -- Nu executați peste tabele existente.
-CREATE TABLE dbo.CONFIG
+CREATE TABLE dbo._CONFIG
 (
     ConfigID INT IDENTITY(1,1) NOT NULL,
     Username NVARCHAR(100) NOT NULL,
@@ -34,7 +34,7 @@ CREATE TABLE dbo.CONFIG
 GO
 
 
-CREATE TABLE dbo.VEHICLES
+CREATE TABLE dbo._VEHICLES
 (
     VehicleID INT IDENTITY(1,1) NOT NULL,
     VIN CHAR(17) NOT NULL,
@@ -55,11 +55,11 @@ CREATE TABLE dbo.VEHICLES
 
     CONSTRAINT FK_VEHICLES_Seller
         FOREIGN KEY (SellerUsername)
-        REFERENCES dbo.CONFIG (Username),
+        REFERENCES dbo._CONFIG (Username),
 
     CONSTRAINT FK_VEHICLES_Advisor
         FOREIGN KEY (AdvisorUsername)
-        REFERENCES dbo.CONFIG (Username),
+        REFERENCES dbo._CONFIG (Username),
 
     CONSTRAINT CK_VEHICLES_CRP_Advisor
         CHECK
@@ -75,7 +75,7 @@ CREATE TABLE dbo.VEHICLES
 GO
 
 
-CREATE TABLE dbo.INSPECTIONS
+CREATE TABLE dbo._INSPECTIONS
 (
     InspectionID INT IDENTITY(1,1) NOT NULL,
     VehicleID INT NOT NULL,
@@ -89,11 +89,11 @@ CREATE TABLE dbo.INSPECTIONS
 
     CONSTRAINT FK_INSPECTIONS_Vehicle
         FOREIGN KEY (VehicleID)
-        REFERENCES dbo.VEHICLES (VehicleID),
+        REFERENCES dbo._VEHICLES (VehicleID),
 
     CONSTRAINT FK_INSPECTIONS_RecordedBy
         FOREIGN KEY (RecordedBy)
-        REFERENCES dbo.CONFIG (Username),
+        REFERENCES dbo._CONFIG (Username),
 
     CONSTRAINT UQ_INSPECTIONS_Vehicle_Date
         UNIQUE (VehicleID, InspectionDate)
@@ -101,7 +101,7 @@ CREATE TABLE dbo.INSPECTIONS
 GO
 
 -- Evidența notificărilor păstrată în implementarea curentă.
-ALTER TABLE dbo.VEHICLES ADD
+ALTER TABLE dbo._VEHICLES ADD
     LastCrpNotificationDate date NULL,
     LastDay27NotificationDate date NULL,
     LastOverdueNotificationDate date NULL;
