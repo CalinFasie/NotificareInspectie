@@ -70,7 +70,7 @@ def get_user_config(username):
                 Email,
                 ManagerEmail,
                 Active
-            FROM dbo.CONFIG
+            FROM dbo._CONFIG
             WHERE Username = ?
               AND Active = 1
         """, username)
@@ -87,7 +87,7 @@ def get_active_advisors():
                 FullName,
                 Email,
                 ManagerEmail
-            FROM dbo.CONFIG
+            FROM dbo._CONFIG
             WHERE Role = 'ADVISOR'
               AND Active = 1
             ORDER BY FullName
@@ -104,7 +104,7 @@ def get_general_manager():
                 Username,
                 FullName,
                 Email
-            FROM dbo.CONFIG
+            FROM dbo._CONFIG
             WHERE Role = 'GENERAL_MANAGER'
               AND Active = 1
         """)
@@ -180,7 +180,7 @@ def set_crp(vehicle_id, crp, advisor_username):
               AND InvoiceDate IS NULL
               AND CRP IS NULL
               AND EXISTS (
-                  SELECT 1 FROM dbo.CONFIG
+                  SELECT 1 FROM dbo._CONFIG
                   WHERE Username = ? AND Active = 1 AND Role = 'ADVISOR'
               )
         """, crp, advisor_username, vehicle_id, advisor_username)
@@ -219,7 +219,7 @@ def change_vehicle_assignment(vehicle_id, seller_username, advisor_username):
             raise ValueError("Introdu CRP înainte de alocarea unui consilier.")
 
         cursor.execute("""
-            SELECT Username FROM dbo.CONFIG WITH (UPDLOCK, HOLDLOCK)
+            SELECT Username FROM dbo._CONFIG WITH (UPDLOCK, HOLDLOCK)
             WHERE Username = ? AND Active = 1
               AND Role IN ('SELLER', 'SELLER_MANAGER', 'ADVISOR_MANAGER', 'GENERAL_MANAGER', 'ADMIN')
         """, seller_username)
@@ -227,7 +227,7 @@ def change_vehicle_assignment(vehicle_id, seller_username, advisor_username):
             raise ValueError("Seller trebuie să fie un utilizator activ cu drept de adăugare vehicule.")
         if advisor_username:
             cursor.execute("""
-                SELECT Username FROM dbo.CONFIG WITH (UPDLOCK, HOLDLOCK)
+                SELECT Username FROM dbo._CONFIG WITH (UPDLOCK, HOLDLOCK)
                 WHERE Username = ? AND Active = 1 AND Role = 'ADVISOR'
             """, advisor_username)
             if cursor.fetchone() is None:
@@ -366,10 +366,10 @@ def get_notification_vehicles(today):
 
             FROM dbo.VEHICLES v
 
-            INNER JOIN dbo.CONFIG s
+            INNER JOIN dbo._CONFIG s
                 ON s.Username = v.SellerUsername
 
-            LEFT JOIN dbo.CONFIG a
+            LEFT JOIN dbo._CONFIG a
                 ON a.Username = v.AdvisorUsername
 
             WHERE v.InvoiceDate IS NULL
@@ -389,7 +389,7 @@ def get_config_users():
                 Email,
                 ManagerEmail,
                 Active
-            FROM dbo.CONFIG
+            FROM dbo._CONFIG
             ORDER BY FullName
         """)
 
@@ -400,7 +400,7 @@ def add_config_user(username, full_name, role, email, manager_email=None):
     with connection_scope() as conn:
         cursor = conn.cursor()
         cursor.execute("""
-            INSERT INTO dbo.CONFIG
+            INSERT INTO dbo._CONFIG
                 (Username, FullName, Role, Email, ManagerEmail)
             VALUES
                 (?, ?, ?, ?, ?)
@@ -420,7 +420,7 @@ def update_config_user(
     with connection_scope() as conn:
         cursor = conn.cursor()
         cursor.execute("""
-            SELECT Username FROM dbo.CONFIG WITH (UPDLOCK, HOLDLOCK)
+            SELECT Username FROM dbo._CONFIG WITH (UPDLOCK, HOLDLOCK)
             WHERE ConfigID = ?
         """, config_id)
         current = cursor.fetchone()
@@ -429,7 +429,7 @@ def update_config_user(
         if current.Username != username:
             raise ValueError("Username nu poate fi schimbat; este folosit în alocări și istoric.")
         cursor.execute("""
-            UPDATE dbo.CONFIG
+            UPDATE dbo._CONFIG
             SET
                 FullName = ?,
                 Role = ?,
@@ -451,7 +451,7 @@ def set_config_user_active(config_id, active):
     with connection_scope() as conn:
         cursor = conn.cursor()
         cursor.execute("""
-            UPDATE dbo.CONFIG
+            UPDATE dbo._CONFIG
             SET Active = ?
             WHERE ConfigID = ?
         """, active, config_id)
@@ -468,7 +468,7 @@ def get_advisor_manager():
                 Username,
                 FullName,
                 Email
-            FROM dbo.CONFIG
+            FROM dbo._CONFIG
             WHERE Role = 'ADVISOR_MANAGER'
               AND Active = 1
         """)
