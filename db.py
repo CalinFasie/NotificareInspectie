@@ -112,10 +112,18 @@ def get_general_manager():
         return cursor.fetchone()
 
 
-def get_active_vehicles():
+def get_vehicles(status_filter="active"):
+    filters = {
+        "all": "",
+        "active": "WHERE InvoiceDate IS NULL",
+        "inactive": "WHERE InvoiceDate IS NOT NULL",
+    }
+    if status_filter not in filters:
+        raise ValueError("Filtrul pentru vehicule nu este valid.")
+
     with connection_scope() as conn:
         cursor = conn.cursor()
-        cursor.execute("""
+        cursor.execute(f"""
             SELECT
                 VehicleID,
                 VIN,
@@ -127,11 +135,15 @@ def get_active_vehicles():
                 AdvisorUsername,
                 InvoiceDate
             FROM dbo._VEHICLES
-            WHERE InvoiceDate IS NULL
+            {filters[status_filter]}
             ORDER BY ReceptionDate, VehicleID
         """)
 
         return cursor.fetchall()
+
+
+def get_active_vehicles():
+    return get_vehicles("active")
 
 
 def get_vehicle(vehicle_id):

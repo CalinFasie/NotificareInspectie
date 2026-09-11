@@ -8,6 +8,11 @@ import db
 
 
 DATE_FORMAT = "%Y-%m-%d"
+VEHICLE_FILTERS = {
+    "Toate": "all",
+    "Active": "active",
+    "Inactive": "inactive",
+}
 
 MANAGER_ROLES = {
     "SELLER_MANAGER",
@@ -149,6 +154,9 @@ def get_crp_display(vehicle):
     if vehicle.CRP:
         return vehicle.CRP
 
+    if vehicle.InvoiceDate is not None:
+        return ""
+
     created_date = vehicle.CreatedAt.date()
     crp_day = (app_today() - created_date).days + 1
 
@@ -168,6 +176,7 @@ class VehicleCheckApp:
     def __init__(self, root, user):
         self.root = root
         self.user = user
+        self.vehicle_filter_var = tk.StringVar(master=root, value="Active")
 
         self.root.title("VehicleCheck")
         self.root.geometry("1250x650")
@@ -191,6 +200,20 @@ class VehicleCheckApp:
             text="VehicleCheck",
             font=("Segoe UI", 16, "bold"),
         ).pack(side="left")
+
+        filter_frame = ttk.Frame(frame)
+        filter_frame.pack(side="left", padx=24)
+
+        ttk.Label(filter_frame, text="Mașini:").pack(side="left", padx=(0, 6))
+        self.vehicle_filter = ttk.Combobox(
+            filter_frame,
+            textvariable=self.vehicle_filter_var,
+            values=tuple(VEHICLE_FILTERS),
+            state="readonly",
+            width=12,
+        )
+        self.vehicle_filter.pack(side="left")
+        self.vehicle_filter.bind("<<ComboboxSelected>>", self.refresh)
 
         ttk.Label(
             frame,
@@ -380,12 +403,13 @@ class VehicleCheckApp:
 
         return int(selection[0])
 
-    def refresh(self):
+    def refresh(self, event=None):
         for item in self.tree.get_children():
             self.tree.delete(item)
 
         try:
-            vehicles = db.get_active_vehicles()
+            status_filter = VEHICLE_FILTERS[self.vehicle_filter_var.get()]
+            vehicles = db.get_vehicles(status_filter)
 
             for vehicle in vehicles:
                 status = calculate_vehicle_status(
