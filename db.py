@@ -1,21 +1,78 @@
 from contextlib import contextmanager
+from datetime import date, datetime
 
 import pyodbc
 
 from config import SQL_DATABASE, SQL_SERVER
 
 
+def get_sql_server_driver():
+    installed_drivers = set(pyodbc.drivers())
+    for driver in (
+        "ODBC Driver 18 for SQL Server",
+        "ODBC Driver 17 for SQL Server",
+        "ODBC Driver 13 for SQL Server",
+        "ODBC Driver 11 for SQL Server",
+        "SQL Server Native Client 11.0",
+        "SQL Server Native Client 10.0",
+        "SQL Server",
+    ):
+        if driver in installed_drivers:
+            return driver
+
+    raise RuntimeError(
+        "Nu este disponibil un driver ODBC compatibil cu aplicația. "
+        "Instalează Microsoft ODBC Driver 18 sau 17 for SQL Server "
+        "pe acest calculator, pentru arhitectura aplicației (32/64 biți)."
+    )
+
+
 def get_connection():
-    conn = pyodbc.connect(
-        f"DRIVER={{ODBC Driver 18 for SQL Server}};"
+    driver = get_sql_server_driver()
+    connection_string = (
+        f"DRIVER={{{driver}}};"
         f"SERVER={SQL_SERVER};"
         f"DATABASE={SQL_DATABASE};"
-        f"Trusted_Connection=yes;"
-        f"TrustServerCertificate=yes;",
-        timeout=10,
+        "Trusted_Connection=yes;"
+        "Encrypt=yes;"
     )
+    # Driverul inclus în Windows nu oferă aceleași opțiuni ca ODBC/SNAC.
+    if driver != "SQL Server":
+        connection_string += "TrustServerCertificate=yes;"
+    conn = pyodbc.connect(connection_string, timeout=10)
     conn.timeout = 30
     return conn
+
+
+def _normalize_dates(row):
+    """Normalizează coloanele DATE/DATETIME2 returnate ca text de drivere vechi."""
+    if row is None:
+        return None
+
+    for column in (
+        "ReceptionDate", "InvoiceDate", "InspectionDate",
+        "LastCrpNotificationDate", "LastDay27NotificationDate",
+        "LastOverdueNotificationDate", "LastInspectionDate",
+        "LastInspectionBeforeToday",
+    ):
+        value = getattr(row, column, None)
+        if isinstance(value, str):
+            setattr(row, column, date.fromisoformat(value))
+        elif isinstance(value, datetime):
+            setattr(row, column, value.date())
+
+    for column in ("CreatedAt", "RecordedAt"):
+        value = getattr(row, column, None)
+        if isinstance(value, str):
+            setattr(row, column, datetime.fromisoformat(value))
+    return row
+
+
+def _date_parameter(value):
+    """Trimite datele în format ISO, inclusiv prin drivere fără SQL_TYPE_DATE."""
+    if isinstance(value, datetime):
+        value = value.date()
+    return value.isoformat() if isinstance(value, date) else value
 
 
 @contextmanager
@@ -139,7 +196,7 @@ def get_vehicles(status_filter="active"):
             ORDER BY ReceptionDate, VehicleID
         """)
 
-        return cursor.fetchall()
+        return [_normalize_dates(row) for row in cursor.fetchall()]
 
 
 def get_active_vehicles():
@@ -164,7 +221,7 @@ def get_vehicle(vehicle_id):
             WHERE VehicleID = ?
         """, vehicle_id)
 
-        return cursor.fetchone()
+        return _normalize_dates(cursor.fetchone())
 
 
 def add_vehicle(vin, model, reception_date, seller_username):
@@ -174,8 +231,8 @@ def add_vehicle(vin, model, reception_date, seller_username):
             INSERT INTO dbo._VEHICLES
                 (VIN, Model, ReceptionDate, SellerUsername)
             VALUES
-                (?, ?, ?, ?)
-        """, vin, model, reception_date, seller_username)
+                (?, ?, CONVERT(date, ?, 23), ?)
+        """, vin, model, _date_parameter(reception_date), seller_username)
 
         conn.commit()
 
@@ -207,10 +264,10 @@ def set_invoice_date(vehicle_id, invoice_date):
         cursor = conn.cursor()
         cursor.execute("""
             UPDATE dbo._VEHICLES
-            SET InvoiceDate = ?
+            SET InvoiceDate = CONVERT(date, ?, 23)
             WHERE VehicleID = ?
               AND InvoiceDate IS NULL
-        """, invoice_date, vehicle_id)
+        """, _date_parameter(invoice_date), vehicle_id)
 
         if cursor.rowcount != 1:
             raise ValueError("Vehiculul nu mai este activ sau nu există. Reîncarcă lista.")
@@ -281,7 +338,7 @@ def get_inspections(vehicle_id):
             ORDER BY InspectionDate DESC, InspectionID DESC
         """, vehicle_id)
 
-        return cursor.fetchall()
+        return [_normalize_dates(row) for row in cursor.fetchall()]
 
 
 def get_last_inspection(vehicle_id):
@@ -299,7 +356,7 @@ def get_last_inspection(vehicle_id):
             ORDER BY InspectionDate DESC, InspectionID DESC
         """, vehicle_id)
 
-        return cursor.fetchone()
+        return _normalize_dates(cursor.fetchone())
 
 
 def add_inspection(vehicle_id, inspection_date, recorded_by):
@@ -317,8 +374,8 @@ def add_inspection(vehicle_id, inspection_date, recorded_by):
             INSERT INTO dbo._INSPECTIONS
                 (VehicleID, InspectionDate, RecordedBy)
             VALUES
-                (?, ?, ?)
-        """, vehicle_id, inspection_date, recorded_by)
+                (?, CONVERT(date, ?, 23), ?)
+        """, vehicle_id, _date_parameter(inspection_date), recorded_by)
 
         conn.commit()
 
@@ -328,9 +385,9 @@ def update_inspection(inspection_id, inspection_date):
         cursor = conn.cursor()
         cursor.execute("""
             UPDATE dbo._INSPECTIONS
-            SET InspectionDate = ?
+            SET InspectionDate = CONVERT(date, ?, 23)
             WHERE InspectionID = ?
-        """, inspection_date, inspection_id)
+        """, _date_parameter(inspection_date), inspection_id)
 
         if cursor.rowcount != 1:
             raise ValueError("Verificarea nu mai există. Reîncarcă istoricul.")
@@ -373,7 +430,7 @@ def get_notification_vehicles(today):
                     SELECT MAX(i.InspectionDate)
                     FROM dbo._INSPECTIONS i
                     WHERE i.VehicleID = v.VehicleID
-                      AND i.InspectionDate < ?
+                      AND i.InspectionDate < CONVERT(date, ?, 23)
                 ) AS LastInspectionBeforeToday
 
             FROM dbo._VEHICLES v
@@ -385,9 +442,9 @@ def get_notification_vehicles(today):
                 ON a.Username = v.AdvisorUsername
 
             WHERE v.InvoiceDate IS NULL
-        """, today)
+        """, _date_parameter(today))
 
-        return cursor.fetchall()
+        return [_normalize_dates(row) for row in cursor.fetchall()]
 
 def get_config_users():
     with connection_scope() as conn:
@@ -505,10 +562,10 @@ def mark_notification_sent(vehicle_id, notification_type, sent_date):
         cursor.execute(
             f"""
             UPDATE dbo._VEHICLES
-            SET {column} = ?
+            SET {column} = CONVERT(date, ?, 23)
             WHERE VehicleID = ?
             """,
-            sent_date,
+            _date_parameter(sent_date),
             vehicle_id,
         )
 
