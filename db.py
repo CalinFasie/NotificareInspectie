@@ -31,6 +31,7 @@ def get_connection():
     driver = get_sql_server_driver()
     connection_string = (
 #        f"DRIVER={{{driver}}};"
+        "DRIVER={SQL Server};"
         f"SERVER={SQL_SERVER};"
         f"DATABASE={SQL_DATABASE};"
         "Trusted_Connection=yes;"
