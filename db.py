@@ -10,6 +10,7 @@ def get_sql_server_driver():
     for driver in (
         "ODBC Driver 18 for SQL Server",
         "ODBC Driver 17 for SQL Server",
+        "SQL Server",
     ):
         if driver in installed_drivers:
             return driver
@@ -28,7 +29,7 @@ def get_connection():
         f"SERVER={SQL_SERVER};"
         f"DATABASE={SQL_DATABASE};"
         f"Trusted_Connection=yes;"
-        f"Encrypt=yes;"
+        # f"Encrypt=yes;"
         f"TrustServerCertificate=yes;",
         timeout=10,
     )
