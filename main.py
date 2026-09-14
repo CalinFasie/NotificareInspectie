@@ -3,6 +3,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 from datetime import datetime, timedelta
 from config import app_today
+from version import APP_VERSION
 
 import db
 
@@ -180,7 +181,7 @@ class VehicleCheckApp:
         self.user = user
         self.vehicle_filter_var = tk.StringVar(master=root, value="Active")
 
-        self.root.title("VehicleCheck")
+        self.root.title(f"Notificare Inspecție v{APP_VERSION}")
         self.root.geometry("1250x650")
 
         self.create_header()
