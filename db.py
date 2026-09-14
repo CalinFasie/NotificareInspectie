@@ -220,6 +220,71 @@ def set_crp(vehicle_id, crp, advisor_username):
             raise ValueError("Vehiculul nu mai este activ, are deja CRP sau consilierul nu mai este activ. Reîncarcă lista.")
         conn.commit()
 
+def update_vehicle_details(vehicle_id, vin, model, crp):
+    vin = vin.strip()
+    model = model.strip()
+    crp = crp.strip() if crp else None
+
+    if not vin:
+        raise ValueError("VIN nu poate fi gol.")
+
+    if not model:
+        raise ValueError("Modelul nu poate fi gol.")
+
+    with connection_scope() as conn:
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            UPDATE dbo._VEHICLES
+            SET
+                VIN = ?,
+                Model = ?,
+                CRP = ?
+            WHERE VehicleID = ?
+              AND InvoiceDate IS NULL
+        """,
+            vin,
+            model,
+            crp,
+            vehicle_id,
+        )
+
+        if cursor.rowcount != 1:
+            raise ValueError(
+                "Vehiculul nu există sau este deja facturat."
+            )
+
+        conn.commit()
+
+def update_vehicle_details(vehicle_id, vin, model, crp):
+    vin = vin.strip()
+    model = model.strip()
+    crp = crp.strip() if crp else None
+
+    with connection_scope() as conn:
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            UPDATE dbo._VEHICLES
+            SET
+                VIN = ?,
+                Model = ?,
+                CRP = ?
+            WHERE VehicleID = ?
+              AND InvoiceDate IS NULL
+        """,
+            vin,
+            model,
+            crp,
+            vehicle_id,
+        )
+
+        if cursor.rowcount != 1:
+            raise ValueError(
+                "Vehiculul nu există sau este deja facturat."
+            )
+
+        conn.commit()
 
 def set_invoice_date(vehicle_id, invoice_date):
     with connection_scope() as conn:

@@ -59,6 +59,8 @@ def can_enter_crp(user):
         or user.Role == "ADMIN"
     )
 
+def can_edit_vehicle(user):
+    return user.Role in VALID_ROLES and user.Active == 1
 
 def can_add_inspection(user):
     return (
@@ -327,6 +329,12 @@ class VehicleCheckApp:
             command=self.crp_dialog,
         )
 
+        self.btn_edit_vehicle = ttk.Button(
+            frame,
+            text="Modifică vehicul",
+            command=self.edit_vehicle_dialog,
+        )
+
         self.btn_inspection = ttk.Button(
             frame,
             text="Adaugă verificare",
@@ -354,6 +362,7 @@ class VehicleCheckApp:
         buttons = [
             self.btn_add,
             self.btn_crp,
+            self.btn_edit_vehicle, 
             self.btn_inspection,
             self.btn_invoice,
             self.btn_history,
@@ -698,6 +707,169 @@ class VehicleCheckApp:
             command=save,
         ).grid(
             row=2,
+            column=0,
+            columnspan=2,
+            pady=12,
+        )
+
+    def edit_vehicle_dialog(self):
+        vehicle_id = self.selected_vehicle_id()
+
+        if vehicle_id is None:
+            return
+
+        try:
+            vehicle = db.get_vehicle(vehicle_id)
+
+            if vehicle is None:
+                raise ValueError("Vehiculul nu mai există.")
+
+            if vehicle.InvoiceDate is not None:
+                raise ValueError(
+                    "Vehiculul este facturat și nu mai poate fi modificat."
+                )
+
+        except Exception as exc:
+            messagebox.showerror(
+                "Eroare",
+                str(exc),
+                parent=self.root,
+            )
+            return
+
+        window = tk.Toplevel(self.root)
+        window.title("Modifică vehicul")
+        window.resizable(False, False)
+
+        # VIN
+        ttk.Label(
+            window,
+            text="VIN",
+        ).grid(
+            row=0,
+            column=0,
+            padx=10,
+            pady=8,
+            sticky="w",
+        )
+
+        vin_entry = ttk.Entry(
+            window,
+            width=30,
+        )
+        vin_entry.insert(
+            0,
+            vehicle.VIN or "",
+        )
+        vin_entry.grid(
+            row=0,
+            column=1,
+            padx=10,
+            pady=8,
+        )
+
+        # Model
+        ttk.Label(
+            window,
+            text="Model",
+        ).grid(
+            row=1,
+            column=0,
+            padx=10,
+            pady=8,
+            sticky="w",
+        )
+
+        model_entry = ttk.Entry(
+            window,
+            width=30,
+        )
+        model_entry.insert(
+            0,
+            vehicle.Model or "",
+        )
+        model_entry.grid(
+            row=1,
+            column=1,
+            padx=10,
+            pady=8,
+        )
+
+        # CRP
+        ttk.Label(
+            window,
+            text="CRP",
+        ).grid(
+            row=2,
+            column=0,
+            padx=10,
+            pady=8,
+            sticky="w",
+        )
+
+        crp_entry = ttk.Entry(
+            window,
+            width=30,
+        )
+        crp_entry.insert(
+            0,
+            vehicle.CRP or "",
+        )
+        crp_entry.grid(
+            row=2,
+            column=1,
+            padx=10,
+            pady=8,
+        )
+
+        def save():
+            try:
+                # Reverificăm drepturile utilizatorului
+                self.require_permission(can_edit_vehicle)
+
+                vin = vin_entry.get().strip().upper()
+                model = model_entry.get().strip()
+                crp = crp_entry.get().strip()
+
+                if len(vin) != 17:
+                    raise ValueError(
+                        "VIN trebuie să aibă 17 caractere."
+                    )
+
+                if not model or len(model) > 100:
+                    raise ValueError(
+                        "Modelul este obligatoriu și poate avea "
+                        "cel mult 100 de caractere."
+                    )
+
+                if len(crp) > 50:
+                    raise ValueError(
+                        "CRP poate avea cel mult 50 de caractere."
+                    )
+
+                db.update_vehicle_details(
+                    vehicle_id,
+                    vin,
+                    model,
+                    crp,
+                )
+
+                window.destroy()
+                self.refresh()
+
+            except Exception as exc:
+                messagebox.showerror(
+                    "Eroare",
+                    str(exc),
+                    parent=window,
+                )
+
+        ttk.Button(
+            window,
+            text="Salvează",
+            command=save,
+        ).grid(
+            row=3,
             column=0,
             columnspan=2,
             pady=12,
