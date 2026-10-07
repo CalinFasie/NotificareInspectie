@@ -7,7 +7,7 @@ Aplicație Windows pentru vehicule, CRP, inspecții și notificări email.
 Necesită Python 3.10+, SQL Server și ODBC Driver 18 for SQL Server.
 Conexiunea SQL utilizează contul Windows curent. Baza trebuie să conțină
 tabelele CONFIG, VEHICLES și INSPECTIONS. Pentru o bază nouă, selectați baza
-VehicleCheck și executați `schema.sql`, extras din specificația Explorare 2 și
+CARSM și executați `schema.sql`, extras din specificația Explorare 2 și
 completat cu cele trei coloane de notificări. Nu îl executați peste tabele existente.
 
 ```powershell
@@ -16,12 +16,18 @@ python -m venv .venv
 ```
 
 Configurați serverul SQL și SMTP în `config.py`. Executați manual
-`notification_columns.sql` în baza VehicleCheck dacă lipsesc coloanele de evidență.
+`notification_columns.sql` în baza CARSM dacă lipsesc coloanele de evidență.
 Parola SMTP se citește din variabila de mediu `VEHICLECHECK_SMTP_PASSWORD`.
 Nu o salvați în repository. Contul Windows trebuie configurat în CONFIG;
 primul administrator trebuie creat în baza de date.
 
 ## Utilizare
+
+În fereastra principală, selectorul „Mașini” filtrează lista după facturare:
+„Toate” afișează toate vehiculele, „Active” pe cele fără dată de facturare,
+iar „Inactive” pe cele facturate. La pornire este selectată opțiunea „Active”.
+Schimbarea opțiunii actualizează imediat lista; selecția se păstrează la Refresh
+și după salvarea operațiilor, pe durata sesiunii.
 
 ```powershell
 .\.venv\Scripts\python.exe main.py
