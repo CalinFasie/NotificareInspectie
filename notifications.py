@@ -301,19 +301,31 @@ def process_vehicles(vehicles, today, active_advisors, advisor_manager, general_
     return failures
 
 
+def main(argv=None):
+    parser = argparse.ArgumentParser(description="Notificări VehicleCheck")
+    parser.add_argument("--dry-run", action="store_true",
+                        help="Citește SQL și afișează alertele fără emailuri sau actualizări SQL.")
+    args = parser.parse_args(argv)
+
+    logging.info("Procesul de notificări a început.")
+    logging.info("Modul de execuție: %s.", "dry-run" if args.dry_run else "normal")
+    try:
+        failures = run_notifications(dry_run=args.dry_run)
+    except Exception:
+        logging.error("Procesarea notificărilor a eșuat.")
+        return 1
+
+    if failures:
+        logging.error("Procesarea notificărilor s-a încheiat cu erori (%s).", failures)
+        return 1
+
+    logging.info("Procesarea notificărilor s-a încheiat cu succes.")
+    return 0
+
+
 if __name__ == "__main__":
     for stream in (sys.stdout, sys.stderr):
         if hasattr(stream, "reconfigure"):
             stream.reconfigure(encoding="utf-8")
-    parser = argparse.ArgumentParser(description="Notificări VehicleCheck")
-    parser.add_argument("--dry-run", action="store_true",
-                        help="Citește SQL și afișează alertele fără emailuri sau actualizări SQL.")
-    args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
-    try:
-        failures = run_notifications(dry_run=args.dry_run)
-    except Exception:
-        logging.exception("Procesul de notificări nu a putut fi finalizat.")
-        raise SystemExit(1)
-    logging.info("Proces finalizat: %s vehicule cu erori.", failures)
-    raise SystemExit(1 if failures else 0)
+    raise SystemExit(main())

@@ -1,6 +1,11 @@
+import contextlib
+import io
+import subprocess
+import sys
 import unittest
 import smtplib
 from datetime import date, datetime, timedelta
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -86,6 +91,82 @@ class NotificationTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 notifications.send_email([], "Test", "Body")
             smtp.assert_not_called()
+
+    def test_cli_dry_run_invokes_workflow_and_returns_success(self):
+        with patch.object(notifications, "run_notifications", return_value=0) as run:
+            with self.assertLogs(level="INFO") as captured:
+                result = notifications.main(["--dry-run"])
+
+        run.assert_called_once_with(dry_run=True)
+        self.assertEqual(result, 0)
+        messages = "\n".join(captured.output)
+        self.assertIn("a început", messages)
+        self.assertIn("dry-run", messages)
+        self.assertIn("cu succes", messages)
+
+    def test_cli_without_dry_run_invokes_workflow_and_returns_success(self):
+        with patch.object(notifications, "run_notifications", return_value=0) as run:
+            with self.assertLogs(level="INFO") as captured:
+                result = notifications.main([])
+
+        run.assert_called_once_with(dry_run=False)
+        self.assertEqual(result, 0)
+        self.assertIn("normal", "\n".join(captured.output))
+
+    def test_cli_processing_failure_returns_nonzero(self):
+        with patch.object(notifications, "run_notifications", return_value=1) as run:
+            with self.assertLogs(level="ERROR") as captured:
+                result = notifications.main([])
+
+        run.assert_called_once_with(dry_run=False)
+        self.assertNotEqual(result, 0)
+        self.assertIn("s-a încheiat cu erori (1)", "\n".join(captured.output))
+
+    def test_cli_unexpected_failure_returns_nonzero(self):
+        with patch.object(notifications, "run_notifications", side_effect=RuntimeError("sensitive details")):
+            with self.assertLogs(level="ERROR") as captured:
+                result = notifications.main([])
+
+        self.assertNotEqual(result, 0)
+        self.assertIn("a eșuat", "\n".join(captured.output))
+        self.assertNotIn("sensitive details", "\n".join(captured.output))
+
+    def test_cli_argument_parsing(self):
+        with contextlib.redirect_stdout(io.StringIO()) as stdout:
+            with self.assertRaises(SystemExit) as help_exit:
+                notifications.main(["--help"])
+        self.assertEqual(help_exit.exception.code, 0)
+        self.assertIn("--dry-run", stdout.getvalue())
+
+        with contextlib.redirect_stderr(io.StringIO()):
+            with self.assertRaises(SystemExit) as invalid_exit:
+                notifications.main(["--unexpected-option"])
+        self.assertEqual(invalid_exit.exception.code, 2)
+
+    def test_importing_notifications_does_not_execute_workflow(self):
+        script = "\n".join((
+            "import sys, types",
+            "def unexpected(*args, **kwargs):",
+            "    raise AssertionError('notification workflow ran during import')",
+            "db = types.ModuleType('db')",
+            "for name in ('notification_lock', 'get_notification_vehicles', 'get_active_advisors', 'get_advisor_manager', 'get_general_manager'):",
+            "    setattr(db, name, unexpected)",
+            "sys.modules['db'] = db",
+            "config = types.ModuleType('config')",
+            "config.SMTP_HOST = config.SMTP_PASSWORD = config.SMTP_USER = ''",
+            "config.SMTP_PORT = 0",
+            "config.app_today = unexpected",
+            "sys.modules['config'] = config",
+            "import notifications",
+        ))
+        result = subprocess.run(
+            [sys.executable, "-B", "-c", script],
+            cwd=Path(__file__).resolve().parent,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_error_does_not_stop_next_vehicle(self):
         with (
