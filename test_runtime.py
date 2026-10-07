@@ -15,15 +15,11 @@ class RuntimeTests(unittest.TestCase):
         cases = [
             ([driver18], driver18),
             ([driver17], driver17),
-            (["ODBC Driver 13 for SQL Server"], "ODBC Driver 13 for SQL Server"),
-            (["ODBC Driver 11 for SQL Server"], "ODBC Driver 11 for SQL Server"),
-            (["SQL Server Native Client 11.0"], "SQL Server Native Client 11.0"),
-            (["SQL Server Native Client 10.0"], "SQL Server Native Client 10.0"),
             (["SQL Server"], "SQL Server"),
             (["PostgreSQL Unicode", driver17, driver18], driver18),
             ([driver18, driver17], driver18),
-            (["SQL Server", "SQL Server Native Client 11.0", driver17], driver17),
-            (["SQL Server", "SQL Server Native Client 11.0"], "SQL Server Native Client 11.0"),
+            (["SQL Server", driver17], driver17),
+            (["SQL Server", driver18, driver17], driver18),
         ]
         for installed, expected in cases:
             with self.subTest(installed=installed):
@@ -42,17 +38,24 @@ class RuntimeTests(unittest.TestCase):
                 self.assertEqual(attributes["SERVER"], db.SQL_SERVER)
                 self.assertEqual(attributes["DATABASE"], db.SQL_DATABASE)
                 self.assertEqual(attributes["Trusted_Connection"], "yes")
-                self.assertEqual(attributes["Encrypt"], "yes")
-                if expected == "SQL Server":
-                    self.assertNotIn("TrustServerCertificate", attributes)
-                else:
-                    self.assertEqual(attributes["TrustServerCertificate"], "yes")
+                self.assertNotIn("Encrypt", attributes)
+                self.assertEqual(attributes["TrustServerCertificate"], "yes")
                 self.assertEqual(connect.call_args.kwargs["timeout"], 10)
                 self.assertIs(conn, connect.return_value)
                 self.assertEqual(conn.timeout, 30)
 
     def test_connection_requires_compatible_driver(self):
-        for installed in ([], ["PostgreSQL Unicode"], ["SQL Server Custom"]):
+        unsupported_drivers = (
+            "ODBC Driver 13 for SQL Server",
+            "ODBC Driver 11 for SQL Server",
+            "SQL Server Native Client 11.0",
+            "SQL Server Native Client 10.0",
+        )
+        installations = (
+            [], ["PostgreSQL Unicode"], ["SQL Server Custom"],
+            *[[driver] for driver in unsupported_drivers],
+        )
+        for installed in installations:
             with self.subTest(installed=installed):
                 with (
                     patch.object(db.pyodbc, "drivers", return_value=installed),
@@ -75,40 +78,41 @@ class RuntimeTests(unittest.TestCase):
             self.assertIs(caught.exception, failure)
             connect.assert_called_once()
 
-    def test_vehicle_reads_normalize_dates(self):
+    def test_vehicle_reads_preserve_native_date_types(self):
         reception = date(2026, 9, 1)
         created = datetime(2026, 9, 1, 8, 30)
         for getter, args, multiple in (
             (db.get_vehicles, ("all",), True),
             (db.get_vehicle, (1,), False),
         ):
-            for as_text in (True, False):
-                with self.subTest(getter=getter.__name__, as_text=as_text):
-                    row = SimpleNamespace(
-                        VehicleID=1, VIN="2026-09-01", CRP=None,
-                        ReceptionDate=reception.isoformat() if as_text else reception,
-                        CreatedAt=created.isoformat(" ") if as_text else created,
-                        InvoiceDate=None,
-                    )
-                    with patch.object(db, "get_connection") as connect:
-                        cursor = connect.return_value.__enter__.return_value.cursor.return_value
-                        cursor.fetchall.return_value = [row]
-                        cursor.fetchone.return_value = row
-                        result = getter(*args)
-                    vehicle = result[0] if multiple else result
-                    self.assertIs(vehicle, row)
-                    self.assertEqual(vehicle.ReceptionDate, reception)
-                    self.assertEqual(vehicle.CreatedAt, created)
-                    self.assertIsNone(vehicle.InvoiceDate)
-                    self.assertEqual(vehicle.VIN, "2026-09-01")
-                    with (
-                        patch.object(db, "get_last_inspection", return_value=None),
-                        patch.object(main, "app_today", return_value=date(2026, 9, 12)),
-                    ):
-                        status = main.calculate_vehicle_status(vehicle)
-                        self.assertEqual(status["next_inspection"], date(2026, 9, 30))
-                        self.assertEqual(status["countdown"], "18 zile")
-                        self.assertEqual(main.get_crp_display(vehicle), "LIPSĂ - ÎNTÂRZIAT")
+            with self.subTest(getter=getter.__name__):
+                row = SimpleNamespace(
+                    VehicleID=1, VIN="2026-09-01", CRP=None,
+                    ReceptionDate=reception,
+                    CreatedAt=created,
+                    InvoiceDate=None,
+                )
+                with patch.object(db, "get_connection") as connect:
+                    cursor = connect.return_value.__enter__.return_value.cursor.return_value
+                    cursor.fetchall.return_value = [row]
+                    cursor.fetchone.return_value = row
+                    result = getter(*args)
+                vehicle = result[0] if multiple else result
+                self.assertIs(vehicle, row)
+                self.assertIs(type(vehicle.ReceptionDate), date)
+                self.assertIsInstance(vehicle.CreatedAt, datetime)
+                self.assertEqual(vehicle.ReceptionDate, reception)
+                self.assertEqual(vehicle.CreatedAt, created)
+                self.assertIsNone(vehicle.InvoiceDate)
+                self.assertEqual(vehicle.VIN, "2026-09-01")
+                with (
+                    patch.object(db, "get_last_inspection", return_value=None),
+                    patch.object(main, "app_today", return_value=date(2026, 9, 12)),
+                ):
+                    status = main.calculate_vehicle_status(vehicle)
+                    self.assertEqual(status["next_inspection"], date(2026, 9, 30))
+                    self.assertEqual(status["countdown"], "18 zile")
+                    self.assertEqual(main.get_crp_display(vehicle), "LIPSĂ - ÎNTÂRZIAT")
 
             with patch.object(db, "get_connection") as connect:
                 cursor = connect.return_value.__enter__.return_value.cursor.return_value
@@ -116,12 +120,14 @@ class RuntimeTests(unittest.TestCase):
                 cursor.fetchone.return_value = None
                 self.assertEqual(getter(*args), [] if multiple else None)
 
-    def test_inspection_reads_normalize_dates(self):
+    def test_inspection_reads_preserve_native_date_types(self):
+        inspection_date = date(2026, 9, 12)
+        recorded_at = datetime(2026, 9, 12, 9, 14, 5)
         for getter, multiple in ((db.get_inspections, True), (db.get_last_inspection, False)):
             with self.subTest(getter=getter.__name__):
                 row = SimpleNamespace(
-                    InspectionID=1, InspectionDate="2026-09-12",
-                    RecordedAt="2026-09-12 09:14:05", RecordedBy="calin",
+                    InspectionID=1, InspectionDate=inspection_date,
+                    RecordedAt=recorded_at, RecordedBy="calin",
                 )
                 with patch.object(db, "get_connection") as connect:
                     cursor = connect.return_value.__enter__.return_value.cursor.return_value
@@ -129,22 +135,24 @@ class RuntimeTests(unittest.TestCase):
                     cursor.fetchone.return_value = row
                     result = getter(1)
                 inspection = result[0] if multiple else result
-                self.assertEqual(inspection.InspectionDate, date(2026, 9, 12))
-                self.assertEqual(inspection.RecordedAt, datetime(2026, 9, 12, 9, 14, 5))
+                self.assertIs(type(inspection.InspectionDate), date)
+                self.assertIsInstance(inspection.RecordedAt, datetime)
+                self.assertEqual(inspection.InspectionDate, inspection_date)
+                self.assertEqual(inspection.RecordedAt, recorded_at)
                 self.assertEqual(inspection.RecordedAt.strftime("%d.%m.%Y %H:%M"), "12.09.2026 09:14")
 
         with patch.object(db, "get_connection") as connect:
             connect.return_value.__enter__.return_value.cursor.return_value.fetchone.return_value = None
             self.assertIsNone(db.get_last_inspection(999))
 
-    def test_notifications_skip_already_sent_legacy_dates(self):
+    def test_notifications_skip_already_sent_native_dates(self):
         today = date(2026, 9, 12)
         row = SimpleNamespace(
             VehicleID=1, VIN="TEST", Model="Model", CRP=None,
-            ReceptionDate="2026-08-13", CreatedAt="2026-08-01 08:00:00",
-            LastInspectionDate="2026-08-13", LastInspectionBeforeToday="2026-08-13",
-            LastCrpNotificationDate="2026-09-12", LastDay27NotificationDate="2026-09-12",
-            LastOverdueNotificationDate="2026-09-12",
+            ReceptionDate=date(2026, 8, 13), CreatedAt=datetime(2026, 8, 1, 8, 0),
+            LastInspectionDate=date(2026, 8, 13), LastInspectionBeforeToday=date(2026, 8, 13),
+            LastCrpNotificationDate=today, LastDay27NotificationDate=today,
+            LastOverdueNotificationDate=today,
             SellerName="Seller", SellerEmail="seller@example.com", SellerManagerEmail=None,
             AdvisorUsername="advisor", AdvisorName="Advisor",
             AdvisorEmail="advisor@example.com", AdvisorManagerEmail=None,
@@ -164,21 +172,21 @@ class RuntimeTests(unittest.TestCase):
             self.assertEqual(notifications.run_notifications(), 0)
             send.assert_not_called()
             mark.assert_not_called()
-            self.assertEqual(cursor.execute.call_args.args[1:], ("2026-09-12",))
+            self.assertEqual(cursor.execute.call_args.args[1:], (today,))
         self.assertEqual(row.LastCrpNotificationDate, today)
         self.assertEqual(row.LastDay27NotificationDate, today)
         self.assertEqual(row.LastOverdueNotificationDate, today)
         self.assertEqual(row.LastInspectionDate, date(2026, 8, 13))
         self.assertEqual(notifications.get_inspection_cycle(row, today)[1], 31)
 
-    def test_date_writes_use_iso_parameters(self):
+    def test_date_writes_use_native_parameters(self):
         day = date(2026, 9, 12)
         cases = (
-            (db.add_vehicle, ("VIN", "Model", day, "seller"), ("VIN", "Model", "2026-09-12", "seller")),
-            (db.set_invoice_date, (1, day), ("2026-09-12", 1)),
-            (db.add_inspection, (1, day, "advisor"), (1, "2026-09-12", "advisor")),
-            (db.update_inspection, (1, day), ("2026-09-12", 1)),
-            (db.mark_notification_sent, (1, "CRP", day), ("2026-09-12", 1)),
+            (db.add_vehicle, ("VIN", "Model", day, "seller"), ("VIN", "Model", day, "seller")),
+            (db.set_invoice_date, (1, day), (day, 1)),
+            (db.add_inspection, (1, day, "advisor"), (1, day, "advisor")),
+            (db.update_inspection, (1, day), (day, 1)),
+            (db.mark_notification_sent, (1, "CRP", day), (day, 1)),
         )
         for operation, args, expected in cases:
             with self.subTest(operation=operation.__name__), patch.object(db, "get_connection") as connect:
@@ -187,8 +195,10 @@ class RuntimeTests(unittest.TestCase):
                 cursor.rowcount = 1
                 cursor.fetchone.return_value = SimpleNamespace(InvoiceDate=None)
                 operation(*args)
+                sql = cursor.execute.call_args.args[0]
                 self.assertEqual(cursor.execute.call_args.args[1:], expected)
-                self.assertIn("CONVERT(date, ?, 23)", cursor.execute.call_args.args[0])
+                self.assertEqual(sql.count("?"), len(expected))
+                self.assertNotIn("CONVERT(date, ?, 23)", sql)
                 conn.commit.assert_called_once()
 
     def test_connection_is_closed_on_error(self):
