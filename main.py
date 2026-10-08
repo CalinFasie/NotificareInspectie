@@ -197,7 +197,7 @@ class VehicleCheckApp:
         self.user = user
         self.vehicle_filter_var = tk.StringVar(master=root, value="Active")
 
-        self.root.title(f"Notificare Inspecție v{APP_VERSION}")
+        self.root.title(f"VehicleCheck v{APP_VERSION}")
         self.root.geometry("1250x650")
 
         self.create_header()

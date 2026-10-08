@@ -14,11 +14,16 @@ Owner-confirmed production history in this document is recorded as supplied by t
 
 ## Current version
 
-The source version in `version.py` is `1.1.0`, introduced by commit `63c4db8` (2026-09-14). The next planned release is v1.2.0, but the repository does not show a v1.2.0 version bump or confirmed release.
+The previous released source version is `1.1.0`, introduced by commit `63c4db8` (2026-09-14). The current local release commit is `0704f87` (`Prepare VehicleCheck v1.2.0 release`) and sets the single source constant to `1.2.0`, with GUI title `VehicleCheck v1.2.0`. **v1.2.0 — READY FOR RELEASE**; it has not been pushed or tagged and is not deployed.
 
-At inspection, local `main` was six commits ahead of the local `origin/main` tracking reference and zero commits behind it. No fetch or GitHub check was performed. Do not infer that local commits have been pushed from this tracking-reference count.
+At the start of release preparation, local `main` and the local `origin/main` tracking ref both pointed to `fef33bd`. No fetch or GitHub check was performed. This local ref equality does not independently establish live GitHub state.
 
-The six local commits after that tracking ref are `e30c2b7`, `34ceb48`, `eded1fe`, `9068e80`, `925a8b4`, and `7dcc824` (2026-10-07 to 2026-10-08). They are committed locally; their GitHub status is unknown.
+## Packaging analysis
+
+- Both existing `.spec` files were untracked and have no Git history. Their recipes are materially the same: one-file executable, `console=False`, `main.py` entry point, and `collect_all('tzdata')` for timezone data and hidden imports.
+- `VehicleCheck v1.1.0.spec` has a later filesystem timestamp and a matching `build/VehicleCheck v1.1.0` work folder, but the prior `dist/` contained no `VehicleCheck v1.1.0.exe`. The timestamp of the old `VehicleCheck.exe` does not establish which spec created it. Neither old spec can be confirmed as the latest working build.
+- `VehicleCheck.spec` is selected as the single maintained, version-neutral spec because it avoids the stale v1.1.0 output name and matches the preferred name. The old `VehicleCheck v1.1.0.spec` and existing build/dist artifacts were preserved.
+- The maintained spec keeps one-file/windowed mode, collects `tzdata`, and relies on Analysis/PyInstaller hooks for imports used by `main.py` and `pyodbc`. No custom icon or other application data asset was found. Windows version information is built as a standard PyInstaller `VSVersionInfo` from `APP_VERSION`, avoiding a second manually maintained version string.
 
 ## Current production state
 
@@ -52,14 +57,17 @@ The project owner confirms a controlled SMTP message was received and a later re
 
 | State | Status |
 |---|---|
-| Current source/application version | `1.1.0` in `version.py`. |
-| Next planned release | v1.2.0. |
-| v1.2.0 versioned/prepared | No v1.2.0 version bump or release preparation is present in the inspected repository. |
-| Built | Local untracked PyInstaller specs and build/dist artifacts exist, but are not verified as a v1.2.0 build or as matching current source. |
-| Committed locally | Six commits are ahead of the local tracking ref. |
-| Pushed to GitHub | Unknown; no fetch or GitHub check was performed. |
-| Tagged | No Git tags were present at inspection. |
-| Deployed | No v1.2.0 deployment is established. Owner-confirmed GUI and DAY27 production use are described above. |
+| Previous released source version | `1.1.0`. |
+| Latest local source version | `1.2.0`, release commit `0704f87`; GUI title is `VehicleCheck v1.2.0`. |
+| Release status | **READY FOR RELEASE**; not pushed or tagged, and not deployed. |
+| v1.2.0 preparation | Version source, GUI title, maintained spec, and Windows version metadata prepared. |
+| Tests | Full unittest suite passed: 54 tests, 0 failures, 0 errors. |
+| Built | `dist/VehicleCheck-1.2.0.exe`, 11,842,006 bytes, PyInstaller 6.22.2. Embedded ProductName/FileDescription, FileVersion, and ProductVersion verified. |
+| GUI startup smoke | **PASS** — owner manually launched `dist/VehicleCheck-1.2.0.exe`; the GUI opened and the application ran successfully. |
+| Committed locally | Yes — `0704f87 Prepare VehicleCheck v1.2.0 release`. |
+| Pushed to GitHub | No — the release commit has not been pushed. |
+| Tagged | No — v1.2.0 has not been tagged. |
+| Deployed | No — v1.2.0 has not been deployed. |
 
 ## Centralized notifications
 
@@ -75,17 +83,17 @@ Future technical work: evaluate a durable notification outbox/audit mechanism co
 
 ## Current worktree
 
-Before the documentation task, tracked files were clean. Existing unrelated untracked files/artifacts were preserved: `Explorare 2.md`, two PyInstaller `.spec` files, `build/`, `dist/`, `analyze.ps1`, compatibility ZIPs, a dropdown export/patch, `codex-analysis-prompt.txt`, and `users.txt`. Current documentation work is limited to documentation files and the README documentation links.
+Before release preparation, tracked files were clean and the repository had unrelated untracked files/artifacts: `Explorare 2.md`, two PyInstaller `.spec` files, `build/`, `dist/`, `analyze.ps1`, compatibility ZIPs, a dropdown export/patch, `codex-analysis-prompt.txt`, and `users.txt`. The old `VehicleCheck v1.1.0.spec` and prior build/dist contents remain preserved. The new EXE and isolated clean work directory are generated, ignored build outputs. Release-preparation changes are limited to version/title, `.gitignore`, the maintained spec, and release documentation.
 
 ## Next steps
 
-1. Revisit F-07 outbox/audit design and retry/recovery policy as future technical work after v1.2.0.
-2. Decide whether `srv-sql` or another controlled Windows host will run centralized notifications; configure and validate scheduling before deployment.
-3. Prepare and version the planned v1.2.0 release, then track build, commit, push, tag, and deployment separately.
-4. Preserve the owner-approved F-02/F-03 behavior unless a future production decision explicitly changes it.
+1. After release approval, push the local release commit and create the v1.2.0 tag; handle deployment as a separate step.
+2. Revisit F-07 outbox/audit design and retry/recovery policy as future technical work after v1.2.0.
+3. Decide whether `srv-sql` or another controlled Windows host will run centralized notifications; configure and validate scheduling before deployment.
 
 ## Remaining uncertainties
 
-- Whether the six local commits have been pushed to GitHub; local `origin/main` may be stale.
+- Current live GitHub state; local `origin/main` was not refreshed or independently checked.
 - Which Windows Server will host the centralized scheduled task and whether any recurring task is already configured.
-- Whether local untracked build artifacts correspond to current source; no v1.2.0 build or deployment has been verified.
+- Whether the previous untracked build artifacts correspond to current source. The v1.2.0 executable was built and manually smoke-tested, while the release commit remains local and the executable has not been deployed.
+- Why the earlier automated GUI startup smoke did not expose the expected main-window title within its 40-second timeout; the later owner-confirmed manual launch passed.

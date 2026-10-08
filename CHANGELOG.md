@@ -2,7 +2,14 @@
 
 Changes recorded here are based on local committed source history. An entry under Unreleased is not a published release.
 
-## Unreleased (local commits dated 2026-10-07 to 2026-10-08)
+## v1.2.0 — Ready for release (local commit `0704f87`, 2026-10-08)
+
+### Release preparation
+
+- Prepared VehicleCheck v1.2.0 with a single `APP_VERSION` source, matching GUI title, and a maintained one-file Windows spec that derives executable naming and version metadata from that constant.
+- Built `dist/VehicleCheck-1.2.0.exe`; the owner manually launched it and confirmed the GUI opened and the application ran successfully. **VehicleCheck v1.2.0 GUI SMOKE TEST: PASS.**
+- The full test suite passed: 54 tests, 0 failures, 0 errors. The PyInstaller build succeeded and Windows version metadata was verified.
+- Release commit `0704f87` exists locally. It has not been pushed or tagged; v1.2.0 has not been deployed.
 
 ### Added
 
@@ -21,9 +28,7 @@ Changes recorded here are based on local committed source history. An entry unde
 
 ## Release history
 
-The source declares version `1.1.0` in `version.py` (version commit `63c4db8`, dated 2026-09-14). No corresponding Git tag or published release was verified during this documentation update, so this changelog does not assert a release date or deployed artifact for that version.
-
-The next planned release is v1.2.0; it has not been versioned or released in the inspected repository.
+The previous released source version was `1.1.0` (version commit `63c4db8`, dated 2026-09-14). The current local release commit is `0704f87` and sets `APP_VERSION` to `1.2.0`. v1.2.0 is READY FOR RELEASE; it has not been pushed, tagged, or deployed.
 
 ## Technical debt / deferred risks
 
