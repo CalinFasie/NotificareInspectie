@@ -211,7 +211,7 @@ def deliver_notification(vehicle_id, notification_type, today, recipients, subje
     db.mark_notification_sent(vehicle_id, notification_type, today)
 
 
-def run_notifications(dry_run=False):
+def run_notifications(dry_run=False, notification_type=None):
     failures = 0
     with (nullcontext() if dry_run else db.notification_lock()):
         today = app_today()
@@ -222,34 +222,37 @@ def run_notifications(dry_run=False):
         for vehicle in vehicles:
             try:
                 failures += process_vehicles([vehicle], today, active_advisors,
-                                             advisor_manager, general_manager, dry_run=dry_run)
+                                             advisor_manager, general_manager, dry_run=dry_run,
+                                             notification_type=notification_type)
             except Exception:
                 failures += 1
                 logging.exception("Notificare eșuată pentru VehicleID=%s", vehicle.VehicleID)
     return failures
 
 
-def process_vehicles(vehicles, today, active_advisors, advisor_manager, general_manager, dry_run=False):
+def process_vehicles(vehicles, today, active_advisors, advisor_manager, general_manager,
+                     dry_run=False, notification_type=None):
     failures = 0
     for vehicle in vehicles:
 
-        try:
-            if (
-                check_missing_crp(vehicle, today)
-                and vehicle.LastCrpNotificationDate != today
-            ):
-                recipients = get_crp_recipients(
-                    vehicle,
-                    advisor_manager,
-                )
+        if notification_type in (None, "CRP"):
+            try:
+                if (
+                    check_missing_crp(vehicle, today)
+                    and vehicle.LastCrpNotificationDate != today
+                ):
+                    recipients = get_crp_recipients(
+                        vehicle,
+                        advisor_manager,
+                    )
 
-                subject, body = build_crp_email(vehicle)
+                    subject, body = build_crp_email(vehicle)
 
-                deliver_notification(vehicle.VehicleID, "CRP", today,
-                                     recipients, subject, body, dry_run)
-        except Exception:
-            failures += 1
-            logging.exception("Alerta CRP eșuată pentru VehicleID=%s", vehicle.VehicleID)
+                    deliver_notification(vehicle.VehicleID, "CRP", today,
+                                         recipients, subject, body, dry_run)
+            except Exception:
+                failures += 1
+                logging.exception("Alerta CRP eșuată pentru VehicleID=%s", vehicle.VehicleID)
 
         _data_start, cycle_day, due_date = get_inspection_cycle(
             vehicle,
@@ -261,7 +264,8 @@ def process_vehicles(vehicles, today, active_advisors, advisor_manager, general_
         )
 
         if (
-            cycle_day == 27
+            notification_type in (None, "DAY27")
+            and cycle_day == 27
             and vehicle.LastDay27NotificationDate != today
         ):
             recipients = get_day27_recipients(
@@ -279,9 +283,16 @@ def process_vehicles(vehicles, today, active_advisors, advisor_manager, general_
                                  recipients, subject, body, dry_run)
 
         elif (
-            (cycle_day == 30 or (cycle_day > 30 and not inspection_done_today))
-            and vehicle.LastOverdueNotificationDate != today
-        ):
+            (
+                notification_type in (None, "DAY30")
+                and cycle_day == 30
+            )
+            or (
+                notification_type in (None, "OVERDUE")
+                and cycle_day > 30
+                and not inspection_done_today
+            )
+        ) and vehicle.LastOverdueNotificationDate != today:
             recipients = get_day30_recipients(
                 vehicle,
                 advisor_manager,
@@ -303,6 +314,9 @@ def process_vehicles(vehicles, today, active_advisors, advisor_manager, general_
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description="Notificări VehicleCheck")
+    parser.add_argument("--type", dest="notification_type",
+                        choices=("CRP", "DAY27", "DAY30", "OVERDUE"),
+                        help="Procesează numai tipul de notificare selectat.")
     parser.add_argument("--dry-run", action="store_true",
                         help="Citește SQL și afișează alertele fără emailuri sau actualizări SQL.")
     args = parser.parse_args(argv)
@@ -310,7 +324,10 @@ def main(argv=None):
     logging.info("Procesul de notificări a început.")
     logging.info("Modul de execuție: %s.", "dry-run" if args.dry_run else "normal")
     try:
-        failures = run_notifications(dry_run=args.dry_run)
+        failures = run_notifications(
+            dry_run=args.dry_run,
+            notification_type=args.notification_type,
+        )
     except Exception:
         logging.error("Procesarea notificărilor a eșuat.")
         return 1

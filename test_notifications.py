@@ -13,7 +13,8 @@ import notifications
 
 
 class NotificationTests(unittest.TestCase):
-    def run_case(self, cycle_day, *, done=False, sent=False, crp="CRP", fail=False, fail_crp=False):
+    def run_case(self, cycle_day, *, done=False, sent=False, crp="CRP", fail=False,
+                 fail_crp=False, notification_type=None, dry_run=False):
         today = date(2026, 9, 10)
         vehicle = SimpleNamespace(
             VehicleID=1, VIN="TEST", Model="Model", SellerName="Seller",
@@ -41,14 +42,29 @@ class NotificationTests(unittest.TestCase):
             if fail:
                 send.side_effect = RuntimeError("SMTP failed")
                 with self.assertLogs(level="ERROR"):
-                    self.assertEqual(notifications.run_notifications(), 1)
+                    self.assertEqual(
+                        notifications.run_notifications(
+                            dry_run=dry_run,
+                            notification_type=notification_type,
+                        ),
+                        1,
+                    )
                 mark.assert_not_called()
             elif fail_crp:
                 send.side_effect = [RuntimeError("CRP failed"), None]
                 with self.assertLogs(level="ERROR"):
-                    self.assertEqual(notifications.run_notifications(), 1)
+                    self.assertEqual(
+                        notifications.run_notifications(
+                            dry_run=dry_run,
+                            notification_type=notification_type,
+                        ),
+                        1,
+                    )
             else:
-                notifications.run_notifications()
+                notifications.run_notifications(
+                    dry_run=dry_run,
+                    notification_type=notification_type,
+                )
             return send.call_count, [call.args[1] for call in mark.call_args_list]
 
     def test_schedule(self):
@@ -65,6 +81,30 @@ class NotificationTests(unittest.TestCase):
         for day in (27, 30, 31):
             with self.subTest(day=day):
                 self.assertEqual(self.run_case(day, sent=True, crp=None), (0, []))
+        self.assertEqual(
+            self.run_case(27, sent=True, crp=None, notification_type="DAY27"),
+            (0, []),
+        )
+
+    def test_day27_filter_sends_only_day27(self):
+        self.assertEqual(
+            self.run_case(27, crp=None, notification_type="DAY27"),
+            (1, ["DAY27"]),
+        )
+
+    def test_day27_filter_skips_day30_and_overdue(self):
+        for day in (30, 31):
+            with self.subTest(day=day):
+                self.assertEqual(
+                    self.run_case(day, notification_type="DAY27"),
+                    (0, []),
+                )
+
+    def test_day30_and_overdue_filters_select_their_cycle_days(self):
+        self.assertEqual(self.run_case(30, notification_type="DAY30"), (1, ["OVERDUE"]))
+        self.assertEqual(self.run_case(31, notification_type="OVERDUE"), (1, ["OVERDUE"]))
+        self.assertEqual(self.run_case(31, notification_type="DAY30"), (0, []))
+        self.assertEqual(self.run_case(30, notification_type="OVERDUE"), (0, []))
 
     def test_crp_and_inspection_alerts_are_independent(self):
         self.assertEqual(self.run_case(27, crp=None), (2, ["CRP", "DAY27"]))
@@ -97,7 +137,7 @@ class NotificationTests(unittest.TestCase):
             with self.assertLogs(level="INFO") as captured:
                 result = notifications.main(["--dry-run"])
 
-        run.assert_called_once_with(dry_run=True)
+        run.assert_called_once_with(dry_run=True, notification_type=None)
         self.assertEqual(result, 0)
         messages = "\n".join(captured.output)
         self.assertIn("a început", messages)
@@ -109,16 +149,49 @@ class NotificationTests(unittest.TestCase):
             with self.assertLogs(level="INFO") as captured:
                 result = notifications.main([])
 
-        run.assert_called_once_with(dry_run=False)
+        run.assert_called_once_with(dry_run=False, notification_type=None)
         self.assertEqual(result, 0)
         self.assertIn("normal", "\n".join(captured.output))
+
+    def test_cli_accepts_notification_type_filters(self):
+        for argv, expected_type, expected_dry_run in (
+            (["--type", "DAY27"], "DAY27", False),
+            (["--type", "DAY27", "--dry-run"], "DAY27", True),
+            (["--type", "CRP"], "CRP", False),
+            (["--type", "DAY30"], "DAY30", False),
+            (["--type", "OVERDUE"], "OVERDUE", False),
+        ):
+            with self.subTest(argv=argv):
+                with patch.object(notifications, "run_notifications", return_value=0) as run:
+                    with self.assertLogs(level="INFO"):
+                        self.assertEqual(notifications.main(argv), 0)
+                run.assert_called_once_with(
+                    dry_run=expected_dry_run,
+                    notification_type=expected_type,
+                )
+
+    def test_day27_dry_run_previews_only_day27_without_sending_or_marking(self):
+        with self.assertLogs(level="INFO") as captured:
+            send_count, marked_types = self.run_case(
+                27,
+                crp=None,
+                notification_type="DAY27",
+                dry_run=True,
+            )
+
+        previews = [line for line in captured.output if "PREVIZUALIZARE" in line]
+        self.assertEqual(send_count, 0)
+        self.assertEqual(marked_types, [])
+        self.assertEqual(len(previews), 1)
+        self.assertIn("Tip=DAY27", previews[0])
+        self.assertNotRegex(previews[0], r"Tip=(CRP|DAY30|OVERDUE)")
 
     def test_cli_processing_failure_returns_nonzero(self):
         with patch.object(notifications, "run_notifications", return_value=1) as run:
             with self.assertLogs(level="ERROR") as captured:
                 result = notifications.main([])
 
-        run.assert_called_once_with(dry_run=False)
+        run.assert_called_once_with(dry_run=False, notification_type=None)
         self.assertNotEqual(result, 0)
         self.assertIn("s-a încheiat cu erori (1)", "\n".join(captured.output))
 
@@ -137,11 +210,20 @@ class NotificationTests(unittest.TestCase):
                 notifications.main(["--help"])
         self.assertEqual(help_exit.exception.code, 0)
         self.assertIn("--dry-run", stdout.getvalue())
+        self.assertIn("--type", stdout.getvalue())
+        for notification_type in ("CRP", "DAY27", "DAY30", "OVERDUE"):
+            self.assertIn(notification_type, stdout.getvalue())
+
+        with contextlib.redirect_stderr(io.StringIO()) as stderr:
+            with self.assertRaises(SystemExit) as invalid_exit:
+                notifications.main(["--type", "INVALID"])
+        self.assertEqual(invalid_exit.exception.code, 2)
+        self.assertIn("invalid choice", stderr.getvalue())
 
         with contextlib.redirect_stderr(io.StringIO()):
-            with self.assertRaises(SystemExit) as invalid_exit:
+            with self.assertRaises(SystemExit) as invalid_option_exit:
                 notifications.main(["--unexpected-option"])
-        self.assertEqual(invalid_exit.exception.code, 2)
+        self.assertEqual(invalid_option_exit.exception.code, 2)
 
     def test_importing_notifications_does_not_execute_workflow(self):
         script = "\n".join((
