@@ -12,21 +12,32 @@ from unittest.mock import patch
 import notifications
 
 
+_DEFAULT_DAY27_MARKER = object()
+
+
 class NotificationTests(unittest.TestCase):
-    def run_case(self, cycle_day, *, done=False, sent=False, crp="CRP", fail=False,
-                 fail_crp=False, notification_type=None, dry_run=False):
-        today = date(2026, 9, 10)
+    def run_case(self, cycle_day, *, done=False, sent=False,
+                 day27_marker=_DEFAULT_DAY27_MARKER, today=None, cycle_start=None,
+                 crp="CRP", fail=False, fail_crp=False, notification_type=None,
+                 dry_run=False):
+        if today is None:
+            today = date(2026, 9, 10)
+        if cycle_start is None:
+            cycle_start = today - timedelta(days=cycle_day - 1)
+        if day27_marker is _DEFAULT_DAY27_MARKER:
+            day27_marker = today if sent else None
+
         vehicle = SimpleNamespace(
             VehicleID=1, VIN="TEST", Model="Model", SellerName="Seller",
             SellerEmail="seller@example.com", SellerManagerEmail=None,
             AdvisorUsername="advisor", AdvisorName="Advisor",
             AdvisorEmail="advisor@example.com", AdvisorManagerEmail=None,
-            ReceptionDate=today - timedelta(days=cycle_day - 1),
+            ReceptionDate=cycle_start,
             CreatedAt=datetime(2026, 8, 1), CRP=crp,
             LastInspectionBeforeToday=None,
             LastInspectionDate=today if done else None,
             LastCrpNotificationDate=today if sent else None,
-            LastDay27NotificationDate=today if sent else None,
+            LastDay27NotificationDate=day27_marker,
             LastOverdueNotificationDate=today if sent else None,
         )
         with (
@@ -68,10 +79,97 @@ class NotificationTests(unittest.TestCase):
             return send.call_count, [call.args[1] for call in mark.call_args_list]
 
     def test_schedule(self):
-        for day, expected in [(26, []), (27, ["DAY27"]), (28, []),
-                              (30, ["OVERDUE"]), (31, ["OVERDUE"])]:
+        for day, expected in [(26, []), (27, ["DAY27"]), (28, ["DAY27"]),
+                              (29, ["DAY27"]), (30, ["OVERDUE"]),
+                              (31, ["OVERDUE"])]:
             with self.subTest(day=day):
                 self.assertEqual(self.run_case(day), (len(expected), expected))
+
+    def test_day27_catch_up_window(self):
+        for day, expected in ((26, 0), (27, 1), (28, 1), (29, 1),
+                              (30, 0), (31, 0), (45, 0)):
+            with self.subTest(day=day):
+                self.assertEqual(
+                    self.run_case(day, notification_type="DAY27"),
+                    (expected, ["DAY27"] if expected else []),
+                )
+
+    def test_day27_sent_on_day27_is_not_resent_on_days28_or29(self):
+        cycle_start = date(2026, 8, 15)
+        sent_date = cycle_start + timedelta(days=26)
+        for day, today in (
+            (28, cycle_start + timedelta(days=27)),
+            (29, cycle_start + timedelta(days=28)),
+        ):
+            with self.subTest(day=day):
+                self.assertEqual(
+                    self.run_case(
+                        day,
+                        today=today,
+                        cycle_start=cycle_start,
+                        day27_marker=sent_date,
+                        notification_type="DAY27",
+                    ),
+                    (0, []),
+                )
+
+    def test_day27_catch_up_sent_on_day28_is_not_resent_on_day29(self):
+        cycle_start = date(2026, 8, 15)
+        day28 = cycle_start + timedelta(days=27)
+        day29 = cycle_start + timedelta(days=28)
+        self.assertEqual(
+            self.run_case(
+                28,
+                today=day28,
+                cycle_start=cycle_start,
+                notification_type="DAY27",
+            ),
+            (1, ["DAY27"]),
+        )
+        self.assertEqual(
+            self.run_case(
+                29,
+                today=day29,
+                cycle_start=cycle_start,
+                day27_marker=day28,
+                notification_type="DAY27",
+            ),
+            (0, []),
+        )
+
+    def test_previous_cycle_day27_marker_does_not_block_new_cycle(self):
+        cycle_start = date(2026, 8, 15)
+        self.assertEqual(
+            self.run_case(
+                27,
+                cycle_start=cycle_start,
+                day27_marker=cycle_start - timedelta(days=1),
+                notification_type="DAY27",
+            ),
+            (1, ["DAY27"]),
+        )
+
+    def test_failed_day27_send_can_retry_on_day28(self):
+        cycle_start = date(2026, 8, 15)
+        day27 = cycle_start + timedelta(days=26)
+        day28 = cycle_start + timedelta(days=27)
+        failed_send_count, failed_marks = self.run_case(
+            27,
+            today=day27,
+            cycle_start=cycle_start,
+            fail=True,
+            notification_type="DAY27",
+        )
+        self.assertEqual((failed_send_count, failed_marks), (1, []))
+        self.assertEqual(
+            self.run_case(
+                28,
+                today=day28,
+                cycle_start=cycle_start,
+                notification_type="DAY27",
+            ),
+            (1, ["DAY27"]),
+        )
 
     def test_same_day_inspection_preserves_current_rule(self):
         self.assertEqual(self.run_case(31, done=True), (0, []))
@@ -184,6 +282,7 @@ class NotificationTests(unittest.TestCase):
         self.assertEqual(marked_types, [])
         self.assertEqual(len(previews), 1)
         self.assertIn("Tip=DAY27", previews[0])
+        self.assertIn("ZiCiclu=27", previews[0])
         self.assertNotRegex(previews[0], r"Tip=(CRP|DAY30|OVERDUE)")
 
     def test_cli_processing_failure_returns_nonzero(self):

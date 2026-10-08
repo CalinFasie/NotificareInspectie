@@ -202,10 +202,14 @@ def send_email(recipients, subject, body):
             raise smtplib.SMTPRecipientsRefused(refused)
 
 
-def deliver_notification(vehicle_id, notification_type, today, recipients, subject, body, dry_run=False):
+def deliver_notification(vehicle_id, notification_type, today, recipients, subject, body,
+                         dry_run=False, cycle_day=None):
     if dry_run:
-        logging.info("PREVIZUALIZARE VehicleID=%s Tip=%s Către=%s Subiect=%s",
-                     vehicle_id, notification_type, ", ".join(clean_recipients(recipients)), subject)
+        cycle_day_detail = f" ZiCiclu={cycle_day}" if cycle_day is not None else ""
+        logging.info("PREVIZUALIZARE VehicleID=%s Tip=%s Către=%s Subiect=%s%s",
+                     vehicle_id, notification_type,
+                     ", ".join(clean_recipients(recipients)), subject,
+                     cycle_day_detail)
         return
     send_email(recipients, subject, body)
     db.mark_notification_sent(vehicle_id, notification_type, today)
@@ -254,7 +258,7 @@ def process_vehicles(vehicles, today, active_advisors, advisor_manager, general_
                 failures += 1
                 logging.exception("Alerta CRP eșuată pentru VehicleID=%s", vehicle.VehicleID)
 
-        _data_start, cycle_day, due_date = get_inspection_cycle(
+        cycle_start, cycle_day, due_date = get_inspection_cycle(
             vehicle,
             today,
         )
@@ -263,10 +267,15 @@ def process_vehicles(vehicles, today, active_advisors, advisor_manager, general_
             vehicle.LastInspectionDate == today
         )
 
+        day27_sent_this_cycle = (
+            vehicle.LastDay27NotificationDate is not None
+            and vehicle.LastDay27NotificationDate >= cycle_start
+        )
+
         if (
             notification_type in (None, "DAY27")
-            and cycle_day == 27
-            and vehicle.LastDay27NotificationDate != today
+            and 27 <= cycle_day <= 29
+            and not day27_sent_this_cycle
         ):
             recipients = get_day27_recipients(
                 vehicle,
@@ -280,7 +289,8 @@ def process_vehicles(vehicles, today, active_advisors, advisor_manager, general_
             )
 
             deliver_notification(vehicle.VehicleID, "DAY27", today,
-                                 recipients, subject, body, dry_run)
+                                 recipients, subject, body, dry_run,
+                                 cycle_day=cycle_day)
 
         elif (
             (
