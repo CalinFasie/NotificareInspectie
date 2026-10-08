@@ -2,6 +2,14 @@
 
 Aplicație Windows pentru vehicule, CRP, inspecții și notificări email.
 
+## Documentație de proiect
+
+- [Instrucțiuni pentru agenți](AGENTS.md)
+- [Starea proiectului](docs/PROJECT_STATUS.md)
+- [Decizii tehnice](docs/DECISIONS.md)
+- [Operațiuni](docs/OPERATIONS.md)
+- [Changelog](CHANGELOG.md)
+
 ## Instalare
 
 Necesită Python 3.10+, SQL Server și ODBC Driver 18 for SQL Server.
