@@ -87,10 +87,10 @@ This chronological log separates implemented behavior, tests, local commits, pro
 
 - **Date:** Approved architecture recorded 2026-10-08.
 - **Decision:** Colleague PCs run `VehicleCheck-1.2.0.exe` without an SMTP secret. One `VehicleCheck-Notifications-1.2.0.exe` task runs centrally on `srv-sql` with CARSM access and `VEHICLECHECK_SMTP_PASSWORD` available only to the task identity.
-- **Context:** The separate notification executable is built. The full local test suite and CLI `--help` passed; the authorized DAY27 dry-run returned exit code 1 with no previews. Deployment and Task Scheduler setup have not been performed.
+- **Context:** The separate v1.2.0 notification executable was built. The full local test suite and CLI `--help` passed. An initial DAY27 dry-run attempt returned exit code 1; the owner later reported a successful rerun with SQL access, successful processing, exit code 0, no email, and no marker update. Deployment and Task Scheduler setup have not been performed.
 - **Reason:** Centralize secret handling and scheduled operational ownership.
 - **Consequences:** The designated host/account needs SQL access, SMTP runtime configuration, scheduling, monitoring, and recovery procedures. Use one no-argument task to preserve all-types behavior.
-- **Status:** Architecture approved; executable built; deployment pending. SQL-read validation remains incomplete.
+- **Status:** Architecture approved; v1.2.0 executable built; deployment pending. The successful later DAY27 dry-run is owner-reported.
 
 ## 2026-10-08 — Accept/defer F-07 risk for v1.2.0
 
@@ -100,6 +100,15 @@ This chronological log separates implemented behavior, tests, local commits, pro
 - **Reason:** Mark-before-send could permanently lose legitimate notifications after an SMTP failure. A rushed schema change immediately before release is not warranted; the residual duplicate risk is accepted for this release.
 - **Consequences:** Existing send-then-marker behavior remains. F-07 is not fixed, and a later run may send the same notification again if the marker was not committed.
 - **Status:** F-07 — **ACCEPTED / DEFERRED RISK** for v1.2.0.
+
+## 2026-10-08 — Prepare VehicleCheck v1.2.1 packaging
+
+- **Date:** 2026-10-08.
+- **Decision:** Prepare both the existing windowed GUI executable and the separate console notification executable from the shared `APP_VERSION` source, while preserving the published `v1.2.0` tag and current runtime behavior.
+- **Context:** `v1.2.0` remains published at commit `ee1a255`, tag `v1.2.0`. The current `main` and `origin/main` include the later notification-spec commit `4953d72`.
+- **Reason:** Make the centralized notification runner reproducibly buildable alongside the workstation GUI.
+- **Consequences:** `VehicleCheck-1.2.1.exe` remains the one-file windowed GUI; `VehicleCheck-Notifications-1.2.1.exe` is a one-file console executable from `notifications.py`. Colleague PCs require no SMTP secret; the intended server task receives the secret only through runtime configuration. No notification rules, SQL schema/authentication, SMTP behavior, or F-07 handling change.
+- **Status:** v1.2.1 packaging, unit tests, CLI help, DAY27 dry-run, and GUI startup checks succeeded. The DAY27 run exited 0 with zero eligible previews; the GUI opened with title `VehicleCheck v1.2.1`. v1.2.1 is **READY FOR RELEASE**; deployment and Git publication remain pending. F-07 remains **ACCEPTED / DEFERRED RISK**.
 
 ### Future technical work
 
