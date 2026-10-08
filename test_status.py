@@ -7,6 +7,30 @@ import main
 
 
 class StatusTests(unittest.TestCase):
+    def test_countdown_red_row_threshold(self):
+        for countdown, expected in (
+            (4, False),
+            (3, True),
+            (1, True),
+            (0, True),
+            (-1, True),
+            (None, False),
+        ):
+            with self.subTest(countdown=countdown):
+                self.assertEqual(main.countdown_requires_red(countdown), expected)
+
+    def test_countdown_red_row_matches_displayed_values(self):
+        for countdown, expected in (
+            ("4 zile", False),
+            ("3 zile", True),
+            ("1 zi", True),
+            ("Termen astăzi", True),
+            ("Întârziere: 1 zi", True),
+            ("", False),
+        ):
+            with self.subTest(countdown=countdown):
+                self.assertEqual(main.countdown_requires_red(countdown), expected)
+
     def test_inspection_boundaries(self):
         start = date(2026, 8, 1)
         vehicle = SimpleNamespace(VehicleID=1, ReceptionDate=start, InvoiceDate=None)

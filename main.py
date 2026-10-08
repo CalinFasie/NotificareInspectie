@@ -153,6 +153,22 @@ def calculate_vehicle_status(vehicle, today=None):
     }
 
 
+def countdown_requires_red(countdown):
+    if countdown is None or countdown == "":
+        return False
+
+    if isinstance(countdown, int):
+        return countdown <= 3
+
+    if countdown == "Termen astăzi" or countdown.startswith("Întârziere:"):
+        return True
+
+    try:
+        return int(countdown.split(maxsplit=1)[0]) <= 3
+    except ValueError:
+        return False
+
+
 def get_crp_display(vehicle):
     if vehicle.CRP:
         return vehicle.CRP
@@ -250,6 +266,7 @@ class VehicleCheckApp:
             show="headings",
             selectmode="browse",
         )
+        self.tree.tag_configure("countdown_warning", foreground="red")
 
         headings = {
             "VIN": "VIN",
@@ -446,6 +463,9 @@ class VehicleCheckApp:
                     "",
                     "end",
                     iid=str(vehicle.VehicleID),
+                    tags=("countdown_warning",)
+                    if countdown_requires_red(status["countdown"])
+                    else (),
                     values=(
                         vehicle.VIN,
                         vehicle.Model,
