@@ -310,6 +310,7 @@ class NotificationTests(unittest.TestCase):
         self.assertEqual(help_exit.exception.code, 0)
         self.assertIn("--dry-run", stdout.getvalue())
         self.assertIn("--type", stdout.getvalue())
+        self.assertIn("--smtp-test-recipient", stdout.getvalue())
         for notification_type in ("CRP", "DAY27", "DAY30", "OVERDUE"):
             self.assertIn(notification_type, stdout.getvalue())
 
@@ -323,6 +324,87 @@ class NotificationTests(unittest.TestCase):
             with self.assertRaises(SystemExit) as invalid_option_exit:
                 notifications.main(["--unexpected-option"])
         self.assertEqual(invalid_option_exit.exception.code, 2)
+
+    def test_smtp_test_sends_once_to_requested_recipient_and_returns_zero(self):
+        recipient = "test-inbox@example.com"
+        with (
+            patch.object(notifications, "send_email") as send,
+            self.assertLogs(level="INFO") as captured,
+        ):
+            result = notifications.main(["--smtp-test-recipient", recipient])
+
+        self.assertEqual(result, 0)
+        send.assert_called_once_with(
+            [recipient],
+            "[VehicleCheck TEST] SMTP verification",
+            "This is only a VehicleCheck SMTP connectivity test. "
+            "No production notifications were processed.",
+        )
+        self.assertIn("sent successfully", "\n".join(captured.output))
+
+    def test_smtp_test_skips_notification_workflow_and_all_sql_operations(self):
+        with (
+            patch.object(notifications, "send_email"),
+            patch.object(notifications, "run_notifications") as run,
+            patch.object(notifications, "process_vehicles") as process,
+            patch.object(notifications.db, "notification_lock") as lock,
+            patch.object(notifications.db, "get_notification_vehicles") as get_vehicles,
+            patch.object(notifications.db, "get_active_advisors") as get_advisors,
+            patch.object(notifications.db, "mark_notification_sent") as mark,
+            self.assertLogs(level="INFO"),
+        ):
+            result = notifications.main([
+                "--smtp-test-recipient",
+                "test-inbox@example.com",
+            ])
+
+        self.assertEqual(result, 0)
+        run.assert_not_called()
+        process.assert_not_called()
+        lock.assert_not_called()
+        get_vehicles.assert_not_called()
+        get_advisors.assert_not_called()
+        mark.assert_not_called()
+
+    def test_smtp_test_failure_returns_one_without_logging_password(self):
+        password = "test-password-must-not-be-logged"
+        with (
+            patch.object(notifications, "SMTP_PASSWORD", password),
+            patch.object(
+                notifications,
+                "send_email",
+                side_effect=RuntimeError(f"SMTP authentication failed for {password}"),
+            ),
+            self.assertLogs(level="ERROR") as captured,
+        ):
+            result = notifications.main([
+                "--smtp-test-recipient",
+                "test-inbox@example.com",
+            ])
+
+        messages = "\n".join(captured.output)
+        self.assertEqual(result, 1)
+        self.assertIn("RuntimeError", messages)
+        self.assertNotIn(password, messages)
+
+    def test_smtp_test_rejects_missing_empty_and_incompatible_arguments(self):
+        invalid_arguments = (
+            ["--smtp-test-recipient"],
+            ["--smtp-test-recipient", ""],
+            ["--smtp-test-recipient", "   "],
+            ["--smtp-test-recipient", "test-inbox@example.com", "--type", "DAY27"],
+            ["--smtp-test-recipient", "test-inbox@example.com", "--dry-run"],
+        )
+
+        with patch.object(notifications, "send_email") as send:
+            for argv in invalid_arguments:
+                with self.subTest(argv=argv):
+                    with contextlib.redirect_stderr(io.StringIO()):
+                        with self.assertRaises(SystemExit) as exit_error:
+                            notifications.main(argv)
+                    self.assertEqual(exit_error.exception.code, 2)
+
+        send.assert_not_called()
 
     def test_importing_notifications_does_not_execute_workflow(self):
         script = "\n".join((

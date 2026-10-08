@@ -15,6 +15,13 @@ from config import (
     app_today,
 )
 
+SMTP_TEST_SUBJECT = "[VehicleCheck TEST] SMTP verification"
+SMTP_TEST_BODY = (
+    "This is only a VehicleCheck SMTP connectivity test. "
+    "No production notifications were processed."
+)
+
+
 def clean_recipients(recipients):
     result = []
 
@@ -329,7 +336,29 @@ def main(argv=None):
                         help="Procesează numai tipul de notificare selectat.")
     parser.add_argument("--dry-run", action="store_true",
                         help="Citește SQL și afișează alertele fără emailuri sau actualizări SQL.")
+    parser.add_argument("--smtp-test-recipient", metavar="EMAIL",
+                        help="Trimite un singur email de test SMTP, fără procesarea notificărilor.")
     args = parser.parse_args(argv)
+
+    if args.smtp_test_recipient is not None:
+        if args.notification_type is not None or args.dry_run:
+            parser.error("--smtp-test-recipient cannot be combined with --type or --dry-run")
+
+        recipient = args.smtp_test_recipient.strip()
+        if not recipient:
+            parser.error("--smtp-test-recipient requires a non-empty email address")
+
+        try:
+            send_email([recipient], SMTP_TEST_SUBJECT, SMTP_TEST_BODY)
+        except Exception as exc:
+            logging.error(
+                "SMTP connectivity test failed (%s); exception details omitted.",
+                type(exc).__name__,
+            )
+            return 1
+
+        logging.info("SMTP connectivity test email sent successfully.")
+        return 0
 
     logging.info("Procesul de notificări a început.")
     logging.info("Modul de execuție: %s.", "dry-run" if args.dry_run else "normal")
