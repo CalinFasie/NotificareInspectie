@@ -92,11 +92,15 @@ This chronological log separates implemented behavior, tests, local commits, pro
 - **Consequences:** The designated host/account needs SQL access, SMTP runtime configuration, scheduling, monitoring, and recovery procedures.
 - **Status:** Planned, not deployed.
 
-## 2026-10-08 — Recommend an F-07 notification outbox
+## 2026-10-08 — Accept/defer F-07 risk for v1.2.0
 
 - **Date:** Analysis recorded 2026-10-08.
-- **Decision:** Recommend evaluating a durable outbox/audit table with a unique notification identity and explicit state transitions.
-- **Context:** SMTP may accept an email before the current SQL marker update commits. A process crash or SQL update/commit failure in this interval can cause a later run to retry.
-- **Reason:** Preserve retry and history while reducing ambiguity and duplicate risk with durable claims/idempotency in the application.
-- **Consequences:** SQL and SMTP still cannot participate in one atomic transaction. A design needs safe stale-`SENDING` recovery, unique identity, retry policy, and migration behavior for existing markers.
-- **Status:** Proposed; not approved, implemented, or migrated.
+- **Decision:** For v1.2.0, preserve SMTP-send-then-marker behavior and accept the rare duplicate risk if SMTP accepts a message but the process ends before the marker is persisted.
+- **Context:** Current order is SMTP send, marker `UPDATE`, then SQL commit. The SQL application lock serializes active runs but does not close this crash/restart window.
+- **Reason:** Mark-before-send could permanently lose legitimate notifications after an SMTP failure. A rushed schema change immediately before release is not warranted; the residual duplicate risk is accepted for this release.
+- **Consequences:** Existing send-then-marker behavior remains. F-07 is not fixed, and a later run may send the same notification again if the marker was not committed.
+- **Status:** F-07 — **ACCEPTED / DEFERRED RISK** for v1.2.0.
+
+### Future technical work
+
+Evaluate a durable notification outbox/audit mechanism with a notification identity, vehicle, notification type, inspection cycle, status, timestamps, and retry/recovery policy. It is not implemented. It must not be represented as guaranteeing exactly-once SMTP delivery.

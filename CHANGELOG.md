@@ -24,3 +24,8 @@ Changes recorded here are based on local committed source history. An entry unde
 The source declares version `1.1.0` in `version.py` (version commit `63c4db8`, dated 2026-09-14). No corresponding Git tag or published release was verified during this documentation update, so this changelog does not assert a release date or deployed artifact for that version.
 
 The next planned release is v1.2.0; it has not been versioned or released in the inspected repository.
+
+## Technical debt / deferred risks
+
+- **F-07 — ACCEPTED / DEFERRED RISK for v1.2.0:** Keep the current SMTP-send-then-marker sequence for this release and accept the rare duplicate window if the marker is not committed after SMTP acceptance. Do not mark before sending or rush a schema change before release.
+- Future work: evaluate a durable notification outbox/audit mechanism with notification identity, vehicle, notification type, inspection cycle, status, timestamps, and retry/recovery policy. This is not implemented and does not imply exactly-once SMTP delivery.

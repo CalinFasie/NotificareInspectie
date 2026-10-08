@@ -26,7 +26,7 @@ The six local commits after that tracking ref are `e30c2b7`, `34ceb48`, `eded1fe
 - The project owner confirms that colleague PCs already run the GUI and connect successfully to `srv-sql` / CARSM.
 - A live production-data dry-run completed with exit code 0. A controlled real SMTP test message was received. Subsequently, the owner ran `notifications.py --type DAY27` and confirmed the notification emails were delivered. See the separate validation statuses below.
 - Centralized scheduled execution from one controlled Windows machine/server remains planned. `srv-sql` is a Windows Server being considered as the notification host; it is not documented as a deployed notification host.
-- F-07 remains an unresolved design risk: SMTP acceptance and SQL marker commit are not atomic, so a crash between them can allow a repeat send.
+- **F-07 — ACCEPTED / DEFERRED RISK for v1.2.0:** Preserve SMTP-send-then-marker behavior and accept the rare duplicate window. The existing application lock prevents concurrent runs but not a crash/restart between SMTP acceptance and SQL marker persistence.
 
 ## Findings and completed work
 
@@ -65,9 +65,13 @@ The project owner confirms a controlled SMTP message was received and a later re
 
 The planned model is one controlled Windows machine/server for scheduled sends, rather than sending independently from every colleague workstation. `srv-sql` is a Windows Server and is being considered as that host. Centralized scheduling and deployment are not yet confirmed.
 
-## F-07 in progress
+## F-07 — ACCEPTED / DEFERRED RISK for v1.2.0
 
-F-07 is not fixed. Analysis recommends evaluating a durable notification outbox/audit table to preserve retry and send history and reduce duplicate ambiguity. No source implementation or SQL migration has been made. A database outbox cannot make SMTP delivery and SQL commit a single atomic transaction; the design still needs an approved retry/recovery policy.
+For v1.2.0, preserve the current sequence: SMTP send succeeds, notification marker `UPDATE`, SQL commit. Accept that a process termination in the small interval after SMTP acceptance but before marker persistence may lead to a duplicate on a later run. The SQL application lock prevents concurrent notification runs but does not close this crash/restart window.
+
+Do not change to mark-before-send: that could permanently lose legitimate notifications when SMTP subsequently fails. Do not introduce a rushed schema change immediately before the release. F-07 is accepted/deferred for v1.2.0, not fixed.
+
+Future technical work: evaluate a durable notification outbox/audit mechanism containing a notification identity, vehicle, notification type, inspection cycle, status, timestamps, and retry/recovery policy. This design is not implemented. It must not be described as providing exactly-once SMTP delivery.
 
 ## Current worktree
 
@@ -75,7 +79,7 @@ Before the documentation task, tracked files were clean. Existing unrelated untr
 
 ## Next steps
 
-1. Complete F-07 design and approve any migration/retry policy.
+1. Revisit F-07 outbox/audit design and retry/recovery policy as future technical work after v1.2.0.
 2. Decide whether `srv-sql` or another controlled Windows host will run centralized notifications; configure and validate scheduling before deployment.
 3. Prepare and version the planned v1.2.0 release, then track build, commit, push, tag, and deployment separately.
 4. Preserve the owner-approved F-02/F-03 behavior unless a future production decision explicitly changes it.
