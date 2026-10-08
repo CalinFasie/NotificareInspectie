@@ -44,11 +44,17 @@ Schimbarea opțiunii actualizează imediat lista; selecția se păstrează la Re
 ```
 
 Comanda cu `--dry-run` citește baza și afișează alertele, fără emailuri sau
-actualizări SQL. Comanda fără acest argument trimite emailuri reale.
-Pentru Windows Task Scheduler configurați rularea zilnică la 08:00 și folosiți
-calea absolută către Python din `.venv`, argumentul cu calea către
-`notifications.py` și directorul proiectului ca director de lucru. Contul sarcinii
-necesită acces SQL și variabila de mediu SMTP. Programarea nu este creată automat.
+actualizări SQL. Comanda fără acest argument trimite emailuri reale; comenzile
+Python de mai sus sunt pentru dezvoltare și validare controlată.
+
+Arhitectura de producție aprobată centralizează notificările pe `srv-sql`:
+colegii folosesc `VehicleCheck-1.2.0.exe` fără secret SMTP, iar serverul va rula
+`VehicleCheck-Notifications-1.2.0.exe` într-o singură sarcină programată, cu
+acces CARSM și `VEHICLECHECK_SMTP_PASSWORD` disponibilă doar identității sarcinii.
+EXE-ul de notificări este construit, dar implementarea și sarcina programată sunt
+încă în așteptare. Validarea DAY27 `--dry-run` a ieșit cu codul 1 fără previzualizări;
+investigați cauza și validați accesul SQL înainte de implementare. Nu configurați trimiterea separată
+de pe calculatoarele colegilor.
 
 Administratorii pot adăuga, edita și activa/dezactiva utilizatori din Configurare.
 Butonul „Schimbă alocarea” permite administratorilor schimbarea Seller/Advisor

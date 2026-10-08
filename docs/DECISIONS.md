@@ -85,12 +85,12 @@ This chronological log separates implemented behavior, tests, local commits, pro
 
 ## 2026-10-08 — Centralize notification sending
 
-- **Date:** Planned state recorded 2026-10-08; original decision date not established.
-- **Decision:** Run scheduled notification sending from one controlled, continuously available Windows machine/server rather than each colleague workstation.
-- **Context:** Owner confirms colleague PCs use the GUI and connect successfully to `srv-sql` / CARSM. The Windows Server `srv-sql` is being considered as a notification host, but deployment is not confirmed.
+- **Date:** Approved architecture recorded 2026-10-08.
+- **Decision:** Colleague PCs run `VehicleCheck-1.2.0.exe` without an SMTP secret. One `VehicleCheck-Notifications-1.2.0.exe` task runs centrally on `srv-sql` with CARSM access and `VEHICLECHECK_SMTP_PASSWORD` available only to the task identity.
+- **Context:** The separate notification executable is built. The full local test suite and CLI `--help` passed; the authorized DAY27 dry-run returned exit code 1 with no previews. Deployment and Task Scheduler setup have not been performed.
 - **Reason:** Centralize secret handling and scheduled operational ownership.
-- **Consequences:** The designated host/account needs SQL access, SMTP runtime configuration, scheduling, monitoring, and recovery procedures.
-- **Status:** Planned, not deployed.
+- **Consequences:** The designated host/account needs SQL access, SMTP runtime configuration, scheduling, monitoring, and recovery procedures. Use one no-argument task to preserve all-types behavior.
+- **Status:** Architecture approved; executable built; deployment pending. SQL-read validation remains incomplete.
 
 ## 2026-10-08 — Accept/defer F-07 risk for v1.2.0
 

@@ -1,15 +1,18 @@
 # Changelog
 
-Changes recorded here are based on local committed source history. An entry under Unreleased is not a published release.
+This changelog records published source releases and verified local build artifacts. An entry under Unreleased is not a published release.
 
-## v1.2.0 — Ready for release (local commit `0704f87`, 2026-10-08)
+## v1.2.0 — Published (commit `ee1a255`, tag `v1.2.0`, 2026-10-08)
 
 ### Release preparation
 
 - Prepared VehicleCheck v1.2.0 with a single `APP_VERSION` source, matching GUI title, and a maintained one-file Windows spec that derives executable naming and version metadata from that constant.
 - Built `dist/VehicleCheck-1.2.0.exe`; the owner manually launched it and confirmed the GUI opened and the application ran successfully. **VehicleCheck v1.2.0 GUI SMOKE TEST: PASS.**
 - The full test suite passed: 54 tests, 0 failures, 0 errors. The PyInstaller build succeeded and Windows version metadata was verified.
-- Release commit `0704f87` exists locally. It has not been pushed or tagged; v1.2.0 has not been deployed.
+- Published source state: commit `ee1a255`, tag `v1.2.0`; `main` is synchronized with `origin/main`.
+- Built the separate `dist/VehicleCheck-Notifications-1.2.0.exe` from `notifications.py` (9,160,901 bytes, PyInstaller 6.22.2). It is one-file, console-enabled, uses shared version metadata, and has no embedded SMTP password. `--help` exited 0 and showed all supported options.
+- The authorized `--type DAY27 --dry-run` run exited 1 and produced no preview lines. It did not send email or update notification markers; SQL-read validation remains incomplete.
+- Notification EXE status: **built / deployment pending**. No file was copied to `srv-sql`, and no scheduled task was created. The GUI binary design was not changed.
 
 ### Added
 
@@ -28,7 +31,7 @@ Changes recorded here are based on local committed source history. An entry unde
 
 ## Release history
 
-The previous released source version was `1.1.0` (version commit `63c4db8`, dated 2026-09-14). The current local release commit is `0704f87` and sets `APP_VERSION` to `1.2.0`. v1.2.0 is READY FOR RELEASE; it has not been pushed, tagged, or deployed.
+The previous released source version was `1.1.0` (version commit `63c4db8`, dated 2026-09-14). VehicleCheck v1.2.0 is published from commit `ee1a255` under tag `v1.2.0`. Central notification deployment remains pending.
 
 ## Technical debt / deferred risks
 
